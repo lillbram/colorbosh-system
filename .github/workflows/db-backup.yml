@@ -1,0 +1,21 @@
+name: DB Backup
+
+on:
+  schedule:
+    - cron: '0 17 * * *' # 00:00 WIB
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Dump database
+        run: pg_dump "${{ secrets.SUPABASE_DB_URL }}" > backup-$(date +%Y%m%d).sql
+      - uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup-*.sql
+          retention-days: 30

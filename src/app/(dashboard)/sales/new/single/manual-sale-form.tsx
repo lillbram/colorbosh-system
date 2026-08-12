@@ -1,0 +1,171 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DateInput } from "@/components/forms/date-input";
+import { MoneyInput } from "@/components/forms/money-input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatIDR } from "@/lib/format";
+import { createManualSale } from "../../actions";
+
+type Option = { id: string; name: string };
+type ProductOption = Option & { basePrice: string | null };
+
+export function ManualSaleForm({ channels, products }: { channels: Option[]; products: ProductOption[] }) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [channelId, setChannelId] = useState("");
+  const [productId, setProductId] = useState("");
+  const [qty, setQty] = useState("");
+  const [grossEdited, setGrossEdited] = useState(false);
+  const [isPending, startTransition] = useTransition();
+
+  const selectedProduct = products.find((p) => p.id === productId);
+  const suggestedGross =
+    selectedProduct?.basePrice && Number(qty) > 0
+      ? Math.round(Number(selectedProduct.basePrice) * Number(qty))
+      : 0;
+
+  return (
+    <form
+      action={(formData) => {
+        setError(null);
+        startTransition(async () => {
+          const result = await createManualSale(formData);
+          if (result?.error) {
+            toast.error(result.error);
+            setError(result.error);
+          } else {
+            toast.success("Penjualan dicatat");
+            router.push("/sales");
+          }
+        });
+      }}
+      className="space-y-4"
+    >
+      <Card>
+        <CardHeader>
+          <CardTitle>Order Sporadis / Koreksi</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <DateInput
+              name="entryDate"
+              label="Tanggal"
+              defaultValue={new Date().toISOString().slice(0, 10)}
+            />
+            <div className="space-y-1.5">
+              <Label>Channel</Label>
+              <Select value={channelId} onValueChange={setChannelId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih channel" />
+                </SelectTrigger>
+                <SelectContent>
+                  {channels.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <input type="hidden" name="channelId" value={channelId} />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Produk</Label>
+            <Select
+              value={productId}
+              onValueChange={(v) => {
+                setProductId(v);
+                setGrossEdited(false);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih produk" />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input type="hidden" name="productId" value={productId} />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="qty">Qty</Label>
+              <Input
+                id="qty"
+                name="qty"
+                type="number"
+                value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <MoneyInput
+                name="grossAmount"
+                label="Total Bruto"
+                required
+                applyValue={grossEdited ? undefined : suggestedGross}
+                onValueChange={() => setGrossEdited(true)}
+              />
+              {selectedProduct?.basePrice && (
+                <p className="text-xs text-muted">
+                  Saran otomatis: {formatIDR(suggestedGross)} ({formatIDR(Number(selectedProduct.basePrice))}/pcs)
+                  {grossEdited && (
+                    <button
+                      type="button"
+                      className="ml-1.5 font-medium text-primary-600 hover:underline"
+                      onClick={() => setGrossEdited(false)}
+                    >
+                      Pakai saran
+                    </button>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <MoneyInput name="discount" label="Diskon (opsional)" />
+            <div className="space-y-1.5">
+              <Label htmlFor="orderRef">No. Order (opsional)</Label>
+              <Input id="orderRef" name="orderRef" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="buyerNote">Catatan Pembeli</Label>
+            <Textarea id="buyerNote" name="buyerNote" />
+          </div>
+        </CardContent>
+      </Card>
+
+      {error && <p className="text-sm text-danger">{error}</p>}
+
+      <div className="flex justify-end">
+        <Button type="submit" disabled={isPending || !channelId || !productId}>
+          {isPending ? "Menyimpan..." : "Simpan Penjualan"}
+        </Button>
+      </div>
+    </form>
+  );
+}
