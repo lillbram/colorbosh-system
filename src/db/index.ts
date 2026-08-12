@@ -10,10 +10,17 @@ const client =
   global.__postgresClient ??
   postgres(process.env.DATABASE_URL!, {
     prepare: false,
-    // The session pooler caps out at 15 connections for the whole project —
-    // leave headroom for Supabase Studio, ad-hoc scripts, etc. rather than
-    // letting the app claim the entire budget.
-    max: 8,
+    // The session pooler caps out at 15 connections for the WHOLE Supabase
+    // project — not just this app. On Vercel, each concurrent serverless
+    // invocation can run in its own instance, and every instance gets its
+    // own pool of up to `max` connections — so `max` bounds each instance's
+    // budget, not the app's total. A handful of simultaneous requests across
+    // a few instances at max:8 was enough to blow past 15 by itself. Kept
+    // small (2) so several concurrent instances can coexist under the cap,
+    // with headroom left for Supabase Studio, ad-hoc scripts, etc. Local dev
+    // only ever runs one instance, so this doesn't hurt dev-time throughput
+    // in practice.
+    max: 2,
     connect_timeout: 10,
     idle_timeout: 20,
     max_lifetime: 60 * 30,
