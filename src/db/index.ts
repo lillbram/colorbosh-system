@@ -27,8 +27,12 @@ const client =
     },
   });
 
-if (process.env.NODE_ENV !== "production") {
-  global.__postgresClient = client;
-}
+// Cache on `global` in every environment, not just dev. This survives
+// Next.js HMR locally, and on Vercel it lets a warm serverless instance
+// reuse the same connection pool across invocations instead of opening a
+// fresh one (with its own max:8 connections) every time this module is
+// re-evaluated — without this, concurrent requests could quickly blow past
+// Supabase's 15-connection session-pooler cap for the whole project.
+global.__postgresClient = client;
 
 export const db = drizzle(client, { schema });
