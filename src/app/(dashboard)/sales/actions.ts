@@ -4,7 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { format } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import { salesEntries, salesLiveSessions, channels, payoutSalesLink } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
 import { withAudit } from "@/lib/audit";
@@ -149,7 +149,7 @@ export async function importSalesCsv(formData: FormData) {
   let insertedCount = 0;
 
   try {
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       for (const row of parsed.data.rows) {
         const platformFeeEst = Math.round((row.grossAmount * feePct) / 100);
         const result = await tx
@@ -239,9 +239,9 @@ export async function createPosOrder(formData: FormData) {
   return { success: true, orderRef };
 }
 
-async function assertNotReconciled(ids: string[]) {
+async function assertNotReconciled(tx: typeof db, ids: string[]) {
   if (ids.length === 0) return;
-  const linked = await db
+  const linked = await tx
     .select({ id: payoutSalesLink.salesEntryId })
     .from(payoutSalesLink)
     .where(inArray(payoutSalesLink.salesEntryId, ids));
@@ -257,7 +257,7 @@ export async function cancelSalesEntry(id: string) {
     await withAudit(
       { entityType: "sales_entry", entityId: id, action: "delete", actorId },
       async (tx) => {
-        await assertNotReconciled([id]);
+        await assertNotReconciled(tx, [id]);
         await tx.update(salesEntries).set({ isDeleted: true }).where(eq(salesEntries.id, id));
       }
     );
@@ -285,7 +285,7 @@ export async function cancelPosOrder(orderRef: string) {
           .where(eq(salesEntries.orderRef, orderRef));
         if (rows.length === 0) throw new Error("Order tidak ditemukan");
         firstEntryId = rows[0].id;
-        await assertNotReconciled(rows.map((r) => r.id));
+        await assertNotReconciled(tx, rows.map((r) => r.id));
         await tx.update(salesEntries).set({ isDeleted: true }).where(eq(salesEntries.orderRef, orderRef));
       }
     );

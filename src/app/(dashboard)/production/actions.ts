@@ -3,7 +3,7 @@
 import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import {
   productionBatches,
   productionBatchProducts,
@@ -190,7 +190,7 @@ export async function payTailorTermin(paymentId: string, batchId: string, formDa
   const actorId = await getCurrentUserId();
 
   try {
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       const [payment] = await tx
         .select()
         .from(tailorPayments)

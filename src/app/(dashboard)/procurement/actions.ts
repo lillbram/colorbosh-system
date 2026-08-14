@@ -3,7 +3,7 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import {
   purchaseOrders,
   purchaseOrderItems,
@@ -159,7 +159,7 @@ export async function addPoPayment(poId: string, formData: FormData) {
   const actorId = await getCurrentUserId();
 
   try {
-    await db.transaction(async (tx) => {
+    await withTransaction(async (tx) => {
       const [payment] = await tx
         .insert(purchaseOrderPayments)
         .values({

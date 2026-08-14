@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, withTransaction } from "@/db";
 import { auditLogs, type auditActionEnum } from "@/db/schema";
 
 type AuditAction = (typeof auditActionEnum.enumValues)[number];
@@ -37,7 +37,7 @@ export async function withAudit<T>(
   },
   fn: (tx: typeof db) => Promise<T>
 ): Promise<T> {
-  return db.transaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const result = await fn(tx as unknown as typeof db);
     const entityId =
       typeof params.entityId === "function" ? params.entityId() : params.entityId;
