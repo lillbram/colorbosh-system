@@ -26,7 +26,7 @@ declare
 begin
   foreach t in array array[
     'purchase_orders', 'purchase_order_items', 'purchase_order_payments',
-    'production_batches', 'production_batch_products', 'tailor_payments',
+    'production_batches', 'production_batch_products', 'production_batch_cost_items', 'tailor_payments',
     'sales_entries', 'sales_live_sessions',
     'payout_expectations', 'payouts', 'payout_sales_link',
     'cash_transactions'
