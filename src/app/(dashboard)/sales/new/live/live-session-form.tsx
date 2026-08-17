@@ -20,13 +20,26 @@ import { formatIDR } from "@/lib/format";
 import { createLiveSession } from "../../actions";
 
 type Option = { id: string; name: string };
+type ChannelOption = Option & { requiresDisbursement: boolean | null };
 type ProductOption = Option & { basePrice: string | null };
 
-export function LiveSessionForm({ channels, products }: { channels: Option[]; products: ProductOption[] }) {
+export function LiveSessionForm({
+  channels,
+  products,
+  accounts,
+}: {
+  channels: ChannelOption[];
+  products: ProductOption[];
+  accounts: Option[];
+}) {
   const [error, setError] = useState<string | null>(null);
   const [channelId, setChannelId] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [total, setTotal] = useState(0);
   const [isPending, startTransition] = useTransition();
+
+  const selectedChannel = channels.find((c) => c.id === channelId);
+  const needsAccount = selectedChannel ? selectedChannel.requiresDisbursement === false : false;
 
   return (
     <form
@@ -75,6 +88,30 @@ export function LiveSessionForm({ channels, products }: { channels: Option[]; pr
         </CardContent>
       </Card>
 
+      {needsAccount && (
+        <Card>
+          <CardContent className="space-y-1.5 pt-6">
+            <Label>Akun Tujuan</Label>
+            <p className="text-xs text-muted">
+              Channel ini uangnya diterima langsung — pilih akun kas/bank yang menerima.
+            </p>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih akun" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input type="hidden" name="accountId" value={accountId} />
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Produk Terjual</CardTitle>
@@ -104,7 +141,7 @@ export function LiveSessionForm({ channels, products }: { channels: Option[]; pr
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={isPending || !channelId}>
+        <Button type="submit" disabled={isPending || !channelId || (needsAccount && !accountId)}>
           {isPending ? "Menyimpan..." : "Simpan Rekap Live"}
         </Button>
       </div>

@@ -13,6 +13,7 @@ function toDbValues(data: ReturnType<typeof channelSchema.parse>) {
     type: data.type,
     defaultFeePct: String(data.defaultFeePct),
     defaultHoldDays: data.defaultHoldDays,
+    requiresDisbursement: data.requiresDisbursement,
   };
 }
 

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,7 @@ type Channel = {
   type: "tiktok_live" | "tiktok_shop" | "shopee" | "other";
   defaultFeePct: string | null;
   defaultHoldDays: number | null;
+  requiresDisbursement: boolean | null;
 };
 
 const TYPE_LABEL: Record<Channel["type"], string> = {
@@ -42,6 +44,9 @@ export function ChannelFormDialog({ channel }: { channel?: Channel }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [type, setType] = useState<Channel["type"]>(channel?.type ?? "other");
+  const [requiresDisbursement, setRequiresDisbursement] = useState(
+    channel?.requiresDisbursement ?? true
+  );
   const [isPending, startTransition] = useTransition();
   const isEdit = Boolean(channel);
 
@@ -122,6 +127,27 @@ export function ChannelFormDialog({ channel }: { channel?: Channel }) {
               />
             </div>
           </div>
+
+          <div className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
+            <div>
+              <Label htmlFor="requiresDisbursement-switch">Butuh Pencairan Dana?</Label>
+              <p className="text-xs text-muted">
+                Matikan untuk channel yang uangnya diterima langsung saat order (mis. Paket Usaha) —
+                tidak akan muncul di Pencairan Dana, dan penjualan dari channel ini langsung tercatat
+                sebagai uang masuk.
+              </p>
+            </div>
+            <Switch
+              id="requiresDisbursement-switch"
+              checked={requiresDisbursement}
+              onCheckedChange={setRequiresDisbursement}
+            />
+          </div>
+          <input
+            type="hidden"
+            name="requiresDisbursement"
+            value={requiresDisbursement ? "true" : "false"}
+          />
 
           {error && <p className="text-sm text-danger">{error}</p>}
 

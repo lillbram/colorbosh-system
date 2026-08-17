@@ -9,6 +9,10 @@ export const manualSaleSchema = z.object({
   discount: z.coerce.number().min(0).default(0),
   orderRef: z.string().optional().or(z.literal("")),
   buyerNote: z.string().optional().or(z.literal("")),
+  // Required only when the selected channel has requiresDisbursement=false
+  // (money received directly at sale time) — validated in the action, not
+  // here, since it depends on the channel's setting. See CLAUDE.md §6.4.
+  accountId: z.string().uuid().optional().or(z.literal("")),
 });
 
 export type ManualSaleInput = z.infer<typeof manualSaleSchema>;
@@ -25,6 +29,7 @@ export const liveSessionSchema = z.object({
   hostName: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
   entries: z.array(liveEntryRowSchema).min(1, "Minimal 1 produk"),
+  accountId: z.string().uuid().optional().or(z.literal("")),
 });
 
 export type LiveSessionInput = z.infer<typeof liveSessionSchema>;
@@ -54,6 +59,7 @@ export const posOrderSchema = z.object({
   channelId: z.string().uuid("Pilih channel"),
   buyerNote: z.string().optional().or(z.literal("")),
   items: z.array(posCartItemSchema).min(1, "Keranjang masih kosong"),
+  accountId: z.string().uuid().optional().or(z.literal("")),
 });
 
 export type PosOrderInput = z.infer<typeof posOrderSchema>;

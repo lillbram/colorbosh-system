@@ -66,7 +66,13 @@ export default async function ProductionDetailPage({
 
   const [batchProducts, costItems, payments, accountList] = await Promise.all([
     db
-      .select({ qty: productionBatchProducts.qty, productName: products.name })
+      .select({
+        id: productionBatchProducts.id,
+        productId: productionBatchProducts.productId,
+        qty: productionBatchProducts.qty,
+        actualQty: productionBatchProducts.actualQty,
+        productName: products.name,
+      })
       .from(productionBatchProducts)
       .leftJoin(products, eq(productionBatchProducts.productId, products.id))
       .where(eq(productionBatchProducts.batchId, id)),
@@ -103,7 +109,16 @@ export default async function ProductionDetailPage({
               {batch.actualFinishDate && ` · Selesai ${formatDate(batch.actualFinishDate)}`}
             </span>
           </div>
-          {canFinish && <FinishBatchDialog batchId={batch.id} targetQty={batch.targetQty} />}
+          {canFinish && (
+            <FinishBatchDialog
+              batchId={batch.id}
+              products={batchProducts.map((p) => ({
+                id: p.id,
+                productName: p.productName ?? "-",
+                qty: p.qty,
+              }))}
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -142,7 +157,8 @@ export default async function ProductionDetailPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Produk</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Qty Rencana</TableHead>
+                  <TableHead className="text-right">Qty Aktual</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -150,6 +166,7 @@ export default async function ProductionDetailPage({
                   <TableRow key={i}>
                     <TableCell>{p.productName ?? "-"}</TableCell>
                     <TableCell className="text-right font-mono-num">{p.qty}</TableCell>
+                    <TableCell className="text-right font-mono-num">{p.actualQty ?? "-"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

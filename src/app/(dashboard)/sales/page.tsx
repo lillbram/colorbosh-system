@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ShoppingBag, Radio, Upload, PencilLine, ShoppingCart } from "lucide-react";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { salesEntries, channels, products } from "@/db/schema";
 import { Header } from "@/components/layout/header";
@@ -19,6 +19,7 @@ import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
 import { formatDate, formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cancelSalesEntry } from "./actions";
+import { ReturnSalesEntryDialog } from "./return-sales-entry-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 const TABS = [
   { value: "aktif", label: "Aktif" },
+  { value: "retur", label: "Retur" },
   { value: "dibatalkan", label: "Dibatalkan" },
 ];
 
@@ -40,7 +42,14 @@ export default async function SalesPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status = "aktif" } = await searchParams;
-  const activeTab = status === "dibatalkan" ? "dibatalkan" : "aktif";
+  const activeTab = status === "dibatalkan" || status === "retur" ? status : "aktif";
+
+  const whereClause =
+    activeTab === "dibatalkan"
+      ? eq(salesEntries.isDeleted, true)
+      : activeTab === "retur"
+        ? eq(salesEntries.isReturned, true)
+        : and(eq(salesEntries.isDeleted, false), eq(salesEntries.isReturned, false));
 
   const rows = await db
     .select({
@@ -50,13 +59,14 @@ export default async function SalesPage({
       grossAmount: salesEntries.grossAmount,
       netExpected: salesEntries.netExpected,
       source: salesEntries.source,
+      returnNote: salesEntries.returnNote,
       channelName: channels.name,
       productName: products.name,
     })
     .from(salesEntries)
     .leftJoin(channels, eq(salesEntries.channelId, channels.id))
     .leftJoin(products, eq(salesEntries.productId, products.id))
-    .where(eq(salesEntries.isDeleted, activeTab === "dibatalkan"))
+    .where(whereClause)
     .orderBy(desc(salesEntries.entryDate))
     .limit(200);
 
@@ -135,11 +145,19 @@ export default async function SalesPage({
             <div className="p-6">
               <EmptyState
                 icon={ShoppingBag}
-                title={activeTab === "dibatalkan" ? "Belum ada penjualan dibatalkan" : "Belum ada penjualan"}
+                title={
+                  activeTab === "dibatalkan"
+                    ? "Belum ada penjualan dibatalkan"
+                    : activeTab === "retur"
+                      ? "Belum ada retur"
+                      : "Belum ada penjualan"
+                }
                 description={
                   activeTab === "dibatalkan"
                     ? "Order yang dibatalkan akan muncul di sini."
-                    : "Mulai catat penjualan lewat Kasir (POS), Rekap Live, Impor CSV, atau Input Manual."
+                    : activeTab === "retur"
+                      ? "Order yang ditandai retur akan muncul di sini."
+                      : "Mulai catat penjualan lewat Kasir (POS), Rekap Live, Impor CSV, atau Input Manual."
                 }
               />
             </div>
@@ -155,7 +173,7 @@ export default async function SalesPage({
                   <TableHead>Bersih</TableHead>
                   <TableHead>Sumber</TableHead>
                   <TableHead className="w-24">Status</TableHead>
-                  {activeTab === "aktif" && <TableHead className="w-10" />}
+                  {activeTab === "aktif" && <TableHead className="w-32" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -167,6 +185,9 @@ export default async function SalesPage({
                       <Link href={`/sales/${r.id}`} className="font-medium text-primary-600 hover:underline">
                         {r.productName ?? "-"}
                       </Link>
+                      {activeTab === "retur" && r.returnNote && (
+                        <p className="mt-0.5 text-xs text-muted">{r.returnNote}</p>
+                      )}
                     </TableCell>
                     <TableCell className="font-mono-num">{r.qty}</TableCell>
                     <TableCell className="font-mono-num">{formatIDR(Number(r.grossAmount))}</TableCell>
@@ -177,17 +198,24 @@ export default async function SalesPage({
                       <Badge variant="neutral">{SOURCE_LABEL[r.source ?? "manual"]}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={activeTab === "dibatalkan" ? "danger" : "success"}>
-                        {activeTab === "dibatalkan" ? "Dibatalkan" : "Aktif"}
+                      <Badge
+                        variant={
+                          activeTab === "dibatalkan" ? "danger" : activeTab === "retur" ? "warning" : "success"
+                        }
+                      >
+                        {activeTab === "dibatalkan" ? "Dibatalkan" : activeTab === "retur" ? "Retur" : "Aktif"}
                       </Badge>
                     </TableCell>
                     {activeTab === "aktif" && (
                       <TableCell>
-                        <ConfirmCancelButton
-                          itemName="penjualan ini"
-                          size="icon"
-                          onConfirm={cancelSalesEntry.bind(null, r.id)}
-                        />
+                        <div className="flex justify-end gap-1">
+                          <ReturnSalesEntryDialog entryId={r.id} size="icon" />
+                          <ConfirmCancelButton
+                            itemName="penjualan ini"
+                            size="icon"
+                            onConfirm={cancelSalesEntry.bind(null, r.id)}
+                          />
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>

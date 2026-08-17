@@ -121,9 +121,22 @@ export async function createProductionBatch(formData: FormData) {
 }
 
 export async function finishBatch(batchId: string, formData: FormData) {
-  const parsed = finishBatchSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData);
+  let products: unknown;
+  try {
+    products = JSON.parse(String(raw.productsJson ?? "[]"));
+  } catch {
+    return { error: "Data produk tidak valid" };
+  }
+
+  const parsed = finishBatchSchema.safeParse({ ...raw, products });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
+  }
+
+  const totalActualQty = parsed.data.products.reduce((sum, p) => sum + p.actualQty, 0);
+  if (totalActualQty <= 0) {
+    return { error: "Total qty aktual harus lebih dari 0" };
   }
 
   const actorId = await getCurrentUserId();
@@ -147,13 +160,20 @@ export async function finishBatch(batchId: string, formData: FormData) {
         const termin1 = existingPayments.find((p) => p.terminNo === 1);
         const termin1Amount = Number(termin1?.amount ?? 0);
 
+        for (const p of parsed.data.products) {
+          await tx
+            .update(productionBatchProducts)
+            .set({ actualQty: p.actualQty })
+            .where(eq(productionBatchProducts.id, p.productionBatchProductId));
+        }
+
         await tx
           .update(productionBatches)
           .set({
             status: "finished",
             actualFinishDate: parsed.data.actualFinishDate,
-            actualQty: parsed.data.actualQty,
-            hppPerUnitCalc: String(Math.round(estimatedTotalCost / parsed.data.actualQty)),
+            actualQty: totalActualQty,
+            hppPerUnitCalc: String(Math.round(estimatedTotalCost / totalActualQty)),
             updatedAt: new Date(),
           })
           .where(eq(productionBatches.id, batchId));

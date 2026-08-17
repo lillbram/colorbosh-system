@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { differenceInCalendarDays } from "date-fns";
 import { db } from "@/db";
 import { salesEntries, payouts, channels } from "@/db/schema";
@@ -24,7 +24,15 @@ export type ChannelBalance = {
  */
 export async function getChannelBalances(): Promise<ChannelBalance[]> {
   const [channelList, entries, payoutRows] = await Promise.all([
-    db.select({ id: channels.id, name: channels.name }).from(channels),
+    // Channels with requiresDisbursement=false (e.g. "Paket Usaha") settle
+    // instantly at sale time — see createManualSale/createLiveSession/
+    // createPosOrder, which auto-post a cash_transaction for them instead.
+    // They're excluded here entirely so they never show a fake "Belum Cair"
+    // balance. See CLAUDE.md §6.4.
+    db
+      .select({ id: channels.id, name: channels.name })
+      .from(channels)
+      .where(eq(channels.requiresDisbursement, true)),
     db
       .select({
         channelId: salesEntries.channelId,
@@ -32,7 +40,7 @@ export async function getChannelBalances(): Promise<ChannelBalance[]> {
         netExpected: salesEntries.netExpected,
       })
       .from(salesEntries)
-      .where(eq(salesEntries.isDeleted, false)),
+      .where(and(eq(salesEntries.isDeleted, false), eq(salesEntries.isReturned, false))),
     db
       .select({ channelId: payouts.channelId, actualAmount: payouts.actualAmount })
       .from(payouts)

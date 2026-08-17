@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
 import { formatDate, formatIDR } from "@/lib/format";
 import { cancelSalesEntry } from "../actions";
+import { ReturnSalesEntryDialog } from "../return-sales-entry-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,9 @@ export default async function SalesEntryDetailPage({
       buyerNote: salesEntries.buyerNote,
       source: salesEntries.source,
       isDeleted: salesEntries.isDeleted,
+      isReturned: salesEntries.isReturned,
+      returnedAt: salesEntries.returnedAt,
+      returnNote: salesEntries.returnNote,
       createdAt: salesEntries.createdAt,
       channelName: channels.name,
       productName: products.name,
@@ -69,18 +73,30 @@ export default async function SalesEntryDetailPage({
       <main className="flex-1 space-y-4 p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={entry.isDeleted ? "danger" : "success"}>
-              {entry.isDeleted ? "Dibatalkan" : "Aktif"}
+            <Badge variant={entry.isDeleted ? "danger" : entry.isReturned ? "warning" : "success"}>
+              {entry.isDeleted ? "Dibatalkan" : entry.isReturned ? "Retur" : "Aktif"}
             </Badge>
             <Badge variant="neutral">{SOURCE_LABEL[entry.source ?? "manual"]}</Badge>
           </div>
-          {!entry.isDeleted && (
-            <ConfirmCancelButton
-              itemName="penjualan ini"
-              onConfirm={cancelSalesEntry.bind(null, entry.id)}
-            />
+          {!entry.isDeleted && !entry.isReturned && (
+            <div className="flex gap-2">
+              <ReturnSalesEntryDialog entryId={entry.id} />
+              <ConfirmCancelButton
+                itemName="penjualan ini"
+                onConfirm={cancelSalesEntry.bind(null, entry.id)}
+              />
+            </div>
           )}
         </div>
+
+        {entry.isReturned && (
+          <Card className="border-warning/40 bg-warning/5 p-4">
+            <p className="text-sm font-medium text-warning">
+              Ditandai retur{entry.returnedAt ? ` pada ${formatDate(entry.returnedAt)}` : ""}
+            </p>
+            {entry.returnNote && <p className="mt-1 text-sm text-muted">{entry.returnNote}</p>}
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card className="p-5">

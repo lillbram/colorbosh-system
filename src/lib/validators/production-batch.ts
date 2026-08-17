@@ -28,9 +28,14 @@ export const productionBatchSchema = z.object({
 
 export type ProductionBatchInput = z.infer<typeof productionBatchSchema>;
 
+export const finishBatchProductSchema = z.object({
+  productionBatchProductId: z.string().uuid(),
+  actualQty: z.coerce.number().min(0, "Qty aktual tidak boleh negatif"),
+});
+
 export const finishBatchSchema = z.object({
   actualFinishDate: z.string().min(1, "Tanggal selesai wajib diisi"),
-  actualQty: z.coerce.number().positive("Qty aktual harus lebih dari 0"),
+  products: z.array(finishBatchProductSchema).min(1, "Minimal 1 produk"),
 });
 
 export type FinishBatchInput = z.infer<typeof finishBatchSchema>;

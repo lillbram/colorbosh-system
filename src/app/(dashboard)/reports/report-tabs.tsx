@@ -185,16 +185,27 @@ export function ReportTabs({
                 Qty: p.qty,
                 "Total Bruto": p.gross,
                 "Total Bersih": p.bersih,
+                "HPP Rata-rata": p.avgCost,
+                Profit: p.profit,
+                "Stok Saat Ini": p.stock,
               }))}
             />
           </div>
+          <p className="px-4 pb-2 text-xs text-muted">
+            Stok &amp; HPP rata-rata dihitung sepanjang waktu (bukan hanya periode filter di atas) —
+            HPP rata-rata dari semua batch selesai untuk produk itu, stok = total pernah diproduksi
+            dikurangi total pernah terjual.
+          </p>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Produk</TableHead>
-                <TableHead>Qty</TableHead>
+                <TableHead>Qty Terjual</TableHead>
                 <TableHead className="text-right">Bruto</TableHead>
                 <TableHead className="text-right">Bersih</TableHead>
+                <TableHead className="text-right">HPP Rata-rata</TableHead>
+                <TableHead className="text-right">Profit</TableHead>
+                <TableHead className="text-right">Stok Saat Ini</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,6 +215,17 @@ export function ReportTabs({
                   <TableCell className="font-mono-num">{p.qty}</TableCell>
                   <TableCell className="text-right font-mono-num">{formatIDR(p.gross)}</TableCell>
                   <TableCell className="text-right font-mono-num">{formatIDR(p.bersih)}</TableCell>
+                  <TableCell className="text-right font-mono-num">{formatIDR(p.avgCost)}</TableCell>
+                  <TableCell
+                    className={`text-right font-mono-num ${p.profit < 0 ? "text-danger" : "text-success"}`}
+                  >
+                    {formatIDR(p.profit)}
+                  </TableCell>
+                  <TableCell
+                    className={`text-right font-mono-num ${p.stock < 0 ? "text-danger" : "text-ink"}`}
+                  >
+                    {p.stock}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

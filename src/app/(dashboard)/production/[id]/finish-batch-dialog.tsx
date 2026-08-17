@@ -17,10 +17,23 @@ import {
 import { DateInput } from "@/components/forms/date-input";
 import { finishBatch } from "../actions";
 
-export function FinishBatchDialog({ batchId, targetQty }: { batchId: string; targetQty: number }) {
+type ProductLine = { id: string; productName: string; qty: number };
+
+export function FinishBatchDialog({
+  batchId,
+  products,
+}: {
+  batchId: string;
+  products: ProductLine[];
+}) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actualQtys, setActualQtys] = useState<Record<string, string>>(() =>
+    Object.fromEntries(products.map((p) => [p.id, String(p.qty)]))
+  );
   const [isPending, startTransition] = useTransition();
+
+  const total = products.reduce((sum, p) => sum + (Number(actualQtys[p.id]) || 0), 0);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -38,6 +51,15 @@ export function FinishBatchDialog({ batchId, targetQty }: { batchId: string; tar
         <form
           action={(formData) => {
             setError(null);
+            formData.set(
+              "productsJson",
+              JSON.stringify(
+                products.map((p) => ({
+                  productionBatchProductId: p.id,
+                  actualQty: Number(actualQtys[p.id]) || 0,
+                }))
+              )
+            );
             startTransition(async () => {
               const result = await finishBatch(batchId, formData);
               if (result?.error) {
@@ -55,9 +77,28 @@ export function FinishBatchDialog({ batchId, targetQty }: { batchId: string; tar
             label="Tanggal Selesai"
             defaultValue={new Date().toISOString().slice(0, 10)}
           />
+
           <div className="space-y-1.5">
-            <Label htmlFor="actualQty">Qty Aktual (pcs)</Label>
-            <Input id="actualQty" name="actualQty" type="number" defaultValue={targetQty} required />
+            <Label>Qty Aktual per Produk</Label>
+            <div className="space-y-2">
+              {products.map((p) => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <span className="flex-1 text-sm text-ink">{p.productName}</span>
+                  <Input
+                    type="number"
+                    className="w-24"
+                    value={actualQtys[p.id] ?? ""}
+                    onChange={(e) =>
+                      setActualQtys((prev) => ({ ...prev, [p.id]: e.target.value }))
+                    }
+                    required
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-right text-xs text-muted">
+              Total: <span className="font-mono-num font-semibold text-ink">{total} pcs</span>
+            </p>
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}
@@ -66,7 +107,7 @@ export function FinishBatchDialog({ batchId, targetQty }: { batchId: string; tar
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Batal
             </Button>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || total <= 0}>
               {isPending ? "Menyimpan..." : "Simpan"}
             </Button>
           </DialogFooter>

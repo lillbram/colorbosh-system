@@ -5,6 +5,10 @@ export const channelSchema = z.object({
   type: z.enum(["tiktok_live", "tiktok_shop", "shopee", "other"]),
   defaultFeePct: z.coerce.number().min(0).max(100).default(0),
   defaultHoldDays: z.coerce.number().min(0).default(0),
+  requiresDisbursement: z
+    .string()
+    .default("true")
+    .transform((v) => v === "true"),
 });
 
 export type ChannelInput = z.infer<typeof channelSchema>;

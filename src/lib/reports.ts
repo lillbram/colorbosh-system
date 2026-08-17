@@ -11,11 +11,53 @@ import {
   purchaseOrders,
   purchaseOrderPayments,
   productionBatches,
+  productionBatchProducts,
   tailors,
   categories,
 } from "@/db/schema";
 import { getChannelBalances } from "@/lib/disbursement";
 import { formatIDR } from "@/lib/format";
+
+/**
+ * Weighted-average cost per unit and total ever produced, per product,
+ * computed from all finished batches. This is the cost basis used for both
+ * per-product profit (getPerProductReport) and margin-based Profit Estimasi
+ * — a product made across several batches at different costs gets one
+ * blended cost rather than pretending each sale can be traced to a specific
+ * batch (same "estimate honestly, don't fake precision" approach as the
+ * disbursement FIFO aging). See CLAUDE.md §6.2 & §6.6.
+ */
+async function getProductCostBasis(): Promise<
+  Map<string, { avgCost: number; totalProduced: number }>
+> {
+  const rows = await db
+    .select({
+      productId: productionBatchProducts.productId,
+      actualQty: productionBatchProducts.actualQty,
+      hppPerUnit: productionBatches.hppPerUnitCalc,
+    })
+    .from(productionBatchProducts)
+    .innerJoin(productionBatches, eq(productionBatchProducts.batchId, productionBatches.id))
+    .where(and(eq(productionBatches.status, "finished"), eq(productionBatches.isDeleted, false)));
+
+  const totals = new Map<string, { totalQty: number; totalCost: number }>();
+  for (const r of rows) {
+    if (!r.productId || !r.actualQty || !r.hppPerUnit) continue;
+    const existing = totals.get(r.productId) ?? { totalQty: 0, totalCost: 0 };
+    existing.totalQty += r.actualQty;
+    existing.totalCost += r.actualQty * Number(r.hppPerUnit);
+    totals.set(r.productId, existing);
+  }
+
+  const result = new Map<string, { avgCost: number; totalProduced: number }>();
+  for (const [productId, v] of totals) {
+    result.set(productId, {
+      avgCost: v.totalQty > 0 ? v.totalCost / v.totalQty : 0,
+      totalProduced: v.totalQty,
+    });
+  }
+  return result;
+}
 
 const CHANNEL_COLORS: Record<string, string> = {
   tiktok_live: "#3B4EA0",
@@ -48,6 +90,7 @@ export async function getPenjualanPeriode(start: string, end: string): Promise<n
     .where(
       and(
         eq(salesEntries.isDeleted, false),
+        eq(salesEntries.isReturned, false),
         gte(salesEntries.entryDate, start),
         lte(salesEntries.entryDate, end)
       )
@@ -60,19 +103,60 @@ export async function getUangBelumCair(): Promise<number> {
   return balances.reduce((sum, b) => sum + Math.max(0, b.outstanding), 0);
 }
 
+/**
+ * Real margin-based profit: revenue recognized when sold minus that
+ * product's actual cost (weighted-average HPP) minus operational expenses —
+ * NOT a cash-flow proxy. Previously this just summed cash in/out for the
+ * period, which conflates "profit" with "cash movement" (e.g. paying a big
+ * kain/jahit bill this month for cardigans sold next month made this
+ * month's "profit" look artificially negative). po_payment/tailor_payment
+ * cash movements are intentionally excluded here since they're already
+ * captured via each product's HPP — only `manual` cash_transactions (true
+ * operating expenses: listrik, sewa, gaji, dst.) are subtracted on top of
+ * COGS. See CLAUDE.md §6.6.
+ */
 export async function getProfitEstimasi(start: string, end: string): Promise<number> {
-  const rows = await db
-    .select({ direction: cashTransactions.direction, amount: cashTransactions.amount })
-    .from(cashTransactions)
-    .where(
-      and(
-        eq(cashTransactions.isDeleted, false),
-        gte(cashTransactions.txnDate, start),
-        lte(cashTransactions.txnDate, end)
-      )
-    );
+  const [salesRows, costBasis, opexRows] = await Promise.all([
+    db
+      .select({
+        productId: salesEntries.productId,
+        qty: salesEntries.qty,
+        netExpected: salesEntries.netExpected,
+      })
+      .from(salesEntries)
+      .where(
+        and(
+          eq(salesEntries.isDeleted, false),
+          eq(salesEntries.isReturned, false),
+          gte(salesEntries.entryDate, start),
+          lte(salesEntries.entryDate, end)
+        )
+      ),
+    getProductCostBasis(),
+    db
+      .select({ amount: cashTransactions.amount })
+      .from(cashTransactions)
+      .where(
+        and(
+          eq(cashTransactions.isDeleted, false),
+          eq(cashTransactions.relatedType, "manual"),
+          eq(cashTransactions.direction, "out"),
+          gte(cashTransactions.txnDate, start),
+          lte(cashTransactions.txnDate, end)
+        )
+      ),
+  ]);
 
-  return rows.reduce((sum, r) => sum + (r.direction === "in" ? 1 : -1) * Number(r.amount), 0);
+  let revenue = 0;
+  let cogs = 0;
+  for (const r of salesRows) {
+    revenue += Number(r.netExpected);
+    const avgCost = r.productId ? (costBasis.get(r.productId)?.avgCost ?? 0) : 0;
+    cogs += avgCost * r.qty;
+  }
+  const opex = opexRows.reduce((sum, r) => sum + Number(r.amount), 0);
+
+  return revenue - cogs - opex;
 }
 
 export async function getTopProduk(start: string, end: string, limit = 5) {
@@ -87,6 +171,7 @@ export async function getTopProduk(start: string, end: string, limit = 5) {
     .where(
       and(
         eq(salesEntries.isDeleted, false),
+        eq(salesEntries.isReturned, false),
         gte(salesEntries.entryDate, start),
         lte(salesEntries.entryDate, end)
       )
@@ -121,6 +206,7 @@ export async function getRevenueTrendByChannel(start: string, end: string) {
       .where(
         and(
           eq(salesEntries.isDeleted, false),
+          eq(salesEntries.isReturned, false),
           gte(salesEntries.entryDate, start),
           lte(salesEntries.entryDate, end)
         )
@@ -151,7 +237,13 @@ export async function getMonthlyRevenueTrend(months = 7) {
   const rows = await db
     .select({ entryDate: salesEntries.entryDate, grossAmount: salesEntries.grossAmount })
     .from(salesEntries)
-    .where(and(eq(salesEntries.isDeleted, false), gte(salesEntries.entryDate, start)));
+    .where(
+      and(
+        eq(salesEntries.isDeleted, false),
+        eq(salesEntries.isReturned, false),
+        gte(salesEntries.entryDate, start)
+      )
+    );
 
   const buckets = new Map<string, number>();
   for (let i = months - 1; i >= 0; i--) {
@@ -180,6 +272,7 @@ export async function getChannelBreakdown(start: string, end: string) {
       .where(
         and(
           eq(salesEntries.isDeleted, false),
+          eq(salesEntries.isReturned, false),
           gte(salesEntries.entryDate, start),
           lte(salesEntries.entryDate, end)
         )
@@ -300,6 +393,7 @@ export async function getPnLSummary(start: string, end: string) {
       .where(
         and(
           eq(salesEntries.isDeleted, false),
+          eq(salesEntries.isReturned, false),
           gte(salesEntries.entryDate, start),
           lte(salesEntries.entryDate, end)
         )
@@ -367,6 +461,7 @@ export async function getPerChannelReport(start: string, end: string) {
       .where(
         and(
           eq(salesEntries.isDeleted, false),
+          eq(salesEntries.isReturned, false),
           gte(salesEntries.entryDate, start),
           lte(salesEntries.entryDate, end)
         )
@@ -390,42 +485,72 @@ export async function getPerChannelReport(start: string, end: string) {
 }
 
 export async function getPerProductReport(start: string, end: string) {
-  const rows = await db
-    .select({
-      productName: products.name,
-      qty: salesEntries.qty,
-      grossAmount: salesEntries.grossAmount,
-      netExpected: salesEntries.netExpected,
-    })
-    .from(salesEntries)
-    .leftJoin(products, eq(salesEntries.productId, products.id))
-    .where(
-      and(
-        eq(salesEntries.isDeleted, false),
-        gte(salesEntries.entryDate, start),
-        lte(salesEntries.entryDate, end)
-      )
-    );
+  const [periodRows, allTimeSoldRows, costBasis] = await Promise.all([
+    db
+      .select({
+        productId: salesEntries.productId,
+        productName: products.name,
+        qty: salesEntries.qty,
+        grossAmount: salesEntries.grossAmount,
+        netExpected: salesEntries.netExpected,
+      })
+      .from(salesEntries)
+      .leftJoin(products, eq(salesEntries.productId, products.id))
+      .where(
+        and(
+          eq(salesEntries.isDeleted, false),
+          eq(salesEntries.isReturned, false),
+          gte(salesEntries.entryDate, start),
+          lte(salesEntries.entryDate, end)
+        )
+      ),
+    db
+      .select({ productId: salesEntries.productId, qty: salesEntries.qty })
+      .from(salesEntries)
+      .where(and(eq(salesEntries.isDeleted, false), eq(salesEntries.isReturned, false))),
+    getProductCostBasis(),
+  ]);
 
-  const byProduct = new Map<string, { name: string; qty: number; gross: number; bersih: number }>();
-  for (const r of rows) {
+  const totalSoldAllTime = new Map<string, number>();
+  for (const r of allTimeSoldRows) {
+    if (!r.productId) continue;
+    totalSoldAllTime.set(r.productId, (totalSoldAllTime.get(r.productId) ?? 0) + r.qty);
+  }
+
+  const byProduct = new Map<
+    string,
+    { productId: string; name: string; qty: number; gross: number; bersih: number }
+  >();
+  for (const r of periodRows) {
+    const key = r.productId ?? "unknown";
     const name = r.productName ?? "Tanpa Produk";
-    const existing = byProduct.get(name);
+    const existing = byProduct.get(key);
     if (existing) {
       existing.qty += r.qty;
       existing.gross += Number(r.grossAmount);
       existing.bersih += Number(r.netExpected);
     } else {
-      byProduct.set(name, {
-        name,
-        qty: r.qty,
-        gross: Number(r.grossAmount),
-        bersih: Number(r.netExpected),
-      });
+      byProduct.set(key, { productId: key, name, qty: r.qty, gross: Number(r.grossAmount), bersih: Number(r.netExpected) });
     }
   }
 
-  return Array.from(byProduct.values()).sort((a, b) => b.gross - a.gross);
+  return Array.from(byProduct.values())
+    .map((p) => {
+      const basis = costBasis.get(p.productId);
+      const avgCost = basis?.avgCost ?? 0;
+      const totalProduced = basis?.totalProduced ?? 0;
+      const soldAllTime = totalSoldAllTime.get(p.productId) ?? 0;
+      return {
+        name: p.name,
+        qty: p.qty,
+        gross: p.gross,
+        bersih: p.bersih,
+        avgCost,
+        stock: totalProduced - soldAllTime,
+        profit: p.bersih - avgCost * p.qty,
+      };
+    })
+    .sort((a, b) => b.gross - a.gross);
 }
 
 export async function getCashFlowReport(start: string, end: string) {

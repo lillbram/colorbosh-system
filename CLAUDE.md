@@ -170,8 +170,9 @@ colorbosh-system/
 │   │   │   │   ├── new/page.tsx     # form batch disederhanakan, lihat §6.2
 │   │   │   │   └── [id]/page.tsx
 │   │   │   ├── sales/
-│   │   │   │   ├── page.tsx
+│   │   │   │   ├── page.tsx         # 3 tab: Aktif/Retur/Dibatalkan
 │   │   │   │   ├── [id]/page.tsx    # detail per order, lihat §6.3
+│   │   │   │   ├── return-sales-entry-dialog.tsx  # tombol Retur (beda dari Batalkan)
 │   │   │   │   ├── new/pos/         # Kasir (POS) — mode termudah, lihat §6.3
 │   │   │   │   ├── new/live/        # bulk live
 │   │   │   │   ├── new/import/      # CSV import
@@ -326,6 +327,11 @@ create table channels (
   type channel_type not null,
   default_fee_pct numeric(5,2),
   default_hold_days int,
+  -- false untuk channel yang uangnya diterima langsung saat order (mis.
+  -- "Paket Usaha") — dikecualikan total dari Pencairan Dana, dan penjualan
+  -- dari channel ini langsung posting cash_transaction. Default true
+  -- (TikTok/Shopee-style: jual sekarang, cair belakangan). Lihat §6.4.
+  requires_disbursement boolean default true,
   created_at timestamptz default now()
 );
 -- seed: TikTok Live (fee 0%, hold 0), TikTok Shop (fee 5%, hold 7), Shopee (fee 6%, hold 7)
@@ -432,7 +438,12 @@ create table production_batch_products (
   id uuid primary key default gen_random_uuid(),
   batch_id uuid references production_batches(id) on delete cascade,
   product_id uuid references products(id),
-  qty int not null
+  qty int not null,
+  -- Diisi per-produk saat batch ditandai selesai (default = qty, bisa
+  -- diedit per baris). Tanpa ini, "hasil aktual" cuma ada sebagai satu
+  -- angka agregat untuk seluruh batch, jadi tracking stok per-produk
+  -- mustahil untuk batch multi-produk. Lihat §6.2.
+  actual_qty int
 );
 
 -- Rincian biaya produksi per batch — baris katalog (cost_component_id terisi,
@@ -470,6 +481,8 @@ create table tailor_payments (
 ### 5.5 Sales
 
 > **Update (implementasi):** ditambahkan mode input ke-4, **Kasir (POS)** — lihat §6.3. `sales_source` diperluas dengan value `'pos'`. Semua order (dari mode manapun) bisa dibatalkan (`is_deleted = true`) lewat tombol Batalkan di halaman Penjualan / rekap POS — lihat §6.3 dan §6.4 untuk efeknya ke pencairan dana.
+>
+> **Update kedua:** ditambahkan `is_returned`/`returned_at`/`return_note` — retur (barang sampai lalu dikembalikan) adalah kejadian bisnis yang berbeda dari Batalkan (kesalahan input sebelum barang dikirim), jadi ditrack terpisah dari `is_deleted`. Lihat §6.3.
 
 ```sql
 create type sales_source as enum ('manual','csv_import','live_bulk','pos');
@@ -490,6 +503,10 @@ create table sales_entries (
   created_at timestamptz default now(),
   created_by uuid references users(id),
   is_deleted boolean default false,
+  -- Retur (post-delivery return) — beda dari is_deleted, lihat catatan di atas.
+  is_returned boolean default false,
+  returned_at timestamptz,
+  return_note text,
   unique (channel_id, order_ref)  -- prevent duplicate import
 );
 
@@ -620,6 +637,11 @@ Aktifkan RLS di semua tabel. Kebijakan default:
 - Tab status (`Semua`/`Direncanakan`/`Diproses`/`Selesai`/`Terkirim`) via `?status=`, server-rendered `<Link>` seperti modul lain.
 - Filter tambahan lewat `<ProductionFilters />` (client component, `production-filters.tsx`): pencarian teks (kode batch atau nama penjahit, di-debounce 400ms) via `?q=`, dan date-range "Dari Tanggal"/"Sampai Tanggal" yang memfilter `start_date` via `?from=`&`?to=`. Semua filter di-encode ke query string sehingga bisa di-bookmark/share dan tidak hilang saat reload.
 
+**Qty aktual per produk saat batch selesai:**
+- Dialog "Tandai Selesai" (`FinishBatchDialog`) menampilkan satu baris per produk di batch (bukan satu field "Qty Aktual" agregat seperti sebelumnya) — default terisi qty rencana, bisa diedit per baris. Total qty aktual dihitung otomatis dari jumlah semua baris.
+- Server (`finishBatch()`) update `production_batch_products.actual_qty` per baris, lalu `production_batches.actual_qty` = jumlahnya (tetap disimpan sebagai cache untuk tampilan cepat, tapi `production_batch_products.actual_qty` per-produk adalah sumber kebenarannya).
+- Kenapa: tanpa ini, batch dengan >1 produk tidak bisa tahu berapa masing-masing produk yang benar-benar jadi — cuma ada satu angka agregat. Ini fondasi untuk tracking Stok & Profit per produk, lihat §6.6.
+
 **Aturan lain:**
 - Batch status → `finished` → auto-create termin 2 (sisa amount).
 - HPP per unit = total biaya produksi (dari `production_batch_cost_items`) / `actual_qty`.
@@ -655,15 +677,28 @@ Aktifkan RLS di semua tabel. Kebijakan default:
 - Form pendek untuk order sporadis/koreksi.
 - Field **Total Bruto** otomatis terisi saran (`products.base_price × qty`) begitu produk & qty dipilih, tapi selalu bisa diketik ulang manual — pola sama seperti "Termin bisa didefinisikan manual" di §6.2 (link "Pakai saran" untuk kembali ke nilai otomatis kalau sudah diedit).
 
-**Potongan fee platform otomatis:** setiap mode input (POS, Bulk Live, CSV Import, Manual Single) menghitung `platform_fee_est = round(gross_amount × channels.default_fee_pct / 100)` saat order dibuat (`getChannelFeePct()` di `src/app/(dashboard)/sales/actions.ts`) — user tidak perlu menghitung fee manual, dan `net_expected` (kolom generated) otomatis mengurangi fee + diskon dari bruto.
+**Potongan fee platform otomatis:** setiap mode input (POS, Bulk Live, CSV Import, Manual Single) menghitung `platform_fee_est = round(gross_amount × channels.default_fee_pct / 100)` saat order dibuat (`getChannel()` di `src/app/(dashboard)/sales/actions.ts`) — user tidak perlu menghitung fee manual, dan `net_expected` (kolom generated) otomatis mengurangi fee + diskon dari bruto.
 
-**Detail per order** (`/sales/[id]`): setiap baris di `/sales` bisa diklik (nama produk jadi link) untuk membuka halaman detail — menampilkan channel, produk, qty, harga satuan, rincian Total Bruto/Diskon/Fee Platform (nominal + % yang benar-benar diterapkan saat order dibuat)/Total Bersih, sumber input, no. order, catatan pembeli, siapa & kapan dicatat, serta tombol Batalkan (kalau masih aktif).
+**Channel dengan pencairan langsung ("Paket Usaha" dkk):** setiap channel punya toggle `requires_disbursement` (Pengaturan → Channel). Kalau dimatikan (uang diterima langsung saat order, bukan lewat payout platform belakangan):
+- Form Manual Single, Rekap Live, dan Kasir (POS) menampilkan field **Akun Tujuan** (wajib) begitu channel jenis ini dipilih.
+- Saat order disimpan, sistem **langsung** insert `cash_transactions` (direction=in, amount=net_expected, related_type='manual', deskripsi "Penjualan langsung - {nama channel}") — tidak menunggu payout manual seperti channel platform biasa.
+- Channel ini **tidak pernah muncul** di halaman Pencairan Dana sama sekali (lihat §6.4) — tidak ada gunanya menunggu payout yang memang tidak akan pernah datang.
+- Impor CSV **tidak** mendapat perlakuan ini (diasumsikan selalu untuk export platform TikTok/Shopee, bukan channel pencairan langsung) — kalau dipakai untuk channel jenis ini, order tetap tersimpan tapi tanpa auto cash-posting.
+
+**Detail per order** (`/sales/[id]`): setiap baris di `/sales` bisa diklik (nama produk jadi link) untuk membuka halaman detail — menampilkan channel, produk, qty, harga satuan, rincian Total Bruto/Diskon/Fee Platform (nominal + % yang benar-benar diterapkan saat order dibuat)/Total Bersih, sumber input, no. order, catatan pembeli, siapa & kapan dicatat, serta tombol Batalkan/Retur (kalau masih aktif).
 
 **Membatalkan order (semua mode):**
 - Setiap baris di halaman `/sales` (dan halaman detail `/sales/[id]`) punya tombol "Batalkan" (icon, dengan dialog konfirmasi) → soft-delete (`is_deleted = true`), tercatat di `audit_logs` dengan action `delete`.
 - Order yang sudah **termasuk dalam pencairan dana yang sudah di-reconcile** (ada baris terkait di `payout_sales_link`) **tidak bisa dibatalkan** — action akan menolak dengan pesan error. Ini mencegah pembatalan retroaktif setelah uang benar-benar sudah dicairkan (perlu alur refund terpisah kalau itu terjadi, belum diimplementasikan).
 - Khusus order dari Kasir (POS): panel "Rekap Order Hari Ini" punya tombol Batalkan per-order yang membatalkan **semua** baris dengan `order_ref` yang sama sekaligus (satu klik = satu order, bukan per baris produk).
 - Membatalkan sebuah sales entry **tidak butuh langkah sinkronisasi apapun** ke modul Pencairan Dana — saldo belum cair per channel dihitung live dari `sales_entries` aktif dikurangi `payouts`, jadi begitu entry di-soft-delete, angkanya otomatis ikut turun di halaman berikutnya di-load. Lihat §6.4.
+
+**Retur (beda dari Batalkan):** halaman `/sales` punya 3 tab — Aktif / **Retur** / Dibatalkan.
+- Retur untuk barang yang sudah **sampai ke pembeli lalu dikembalikan** — bukan kesalahan input sebelum barang dikirim (itu kasusnya Batalkan). Secara bisnis dua hal ini berbeda meskipun efek akuntansinya mirip (sama-sama tidak dihitung sebagai penjualan aktif).
+- Tombol "Retur" (ikon, terpisah dari "Batalkan") tersedia di tiap baris Aktif dan di halaman detail — buka dialog dengan field catatan retur opsional (alasan, kondisi barang, dst.), set `is_returned = true`, `returned_at`, `return_note` (`returnSalesEntry()` di `src/app/(dashboard)/sales/actions.ts`).
+- Order yang sudah `is_deleted` tidak bisa diretur, dan sebaliknya — dua status ini saling eksklusif secara logis (satu order cuma bisa salah satu, tidak dua-duanya).
+- Sama seperti Batalkan, tunduk pada guard `assertNotReconciled` — order yang sudah masuk `payout_sales_link` tidak bisa diretur.
+- Entry yang diretur **dikecualikan** dari: saldo Pencairan Dana (`getChannelBalances()`), semua laporan (omset, profit, per-channel, per-produk), dan stok (dihitung balik sebagai belum terjual) — lihat §6.4 & §6.6.
 
 ### 6.4 Disbursement (SOLUSI PAIN POINT UTAMA)
 
@@ -680,6 +715,7 @@ Setiap channel punya satu angka: `Belum Cair = Total Terjual (aktif, sepanjang w
 
 **Halaman `/disbursement`:**
 - Daftar card per channel yang masih `Belum Cair` (outstanding > 0), diurutkan dari saldo terbesar. Section terpisah `Lunas` untuk channel dengan saldo 0.
+- **Channel dengan `requires_disbursement = false`** (mis. "Paket Usaha") **tidak pernah muncul di halaman ini sama sekali** — `getChannelBalances()` memfilternya di query paling awal, bukan sekadar disembunyikan di UI. Uangnya sudah tercatat langsung sebagai `cash_transactions` saat order dibuat (lihat §6.3), jadi tidak ada "Belum Cair" yang perlu ditunggu.
 - Tidak ada lagi tombol "Buat Proyeksi Pencairan" — tidak ada yang perlu di-generate, angkanya selalu live.
 - Tombol "+ Payout Diterima" tinggal: channel, tanggal, jumlah, akun tujuan, no. referensi, catatan. Tidak ada lagi langkah "cocokkan dengan proyeksi" — payout langsung mengurangi saldo channel tsb.
 - Klik card → `/disbursement/[channelId]`: ringkasan saldo (Total Terjual / Total Diterima / Belum Cair, atau "Lebih Bayar" kalau saldo negatif), riwayat pencairan (dengan tombol Batalkan per baris), dan daftar penjualan belum cair (estimasi FIFO).
@@ -688,7 +724,7 @@ Setiap channel punya satu angka: `Belum Cair = Total Terjual (aktif, sepanjang w
 - Tombol "Batalkan" di baris riwayat pencairan (hanya untuk pencairan berstatus Aktif) → soft-delete (`payouts.is_deleted = true`) + soft-delete `cash_transactions` terkait (`related_type = 'payout'`, `related_id` = id payout), tercatat di `audit_logs`. Baris yang sudah dibatalkan tetap tampil di riwayat dengan badge "Dibatalkan" (bukan hilang begitu saja), konsisten dengan pola Aktif/Dibatalkan di halaman Penjualan (§6.3).
 - Saldo channel otomatis pulih (naik) setelah payout dibatalkan, karena dihitung live.
 
-**Efek pembatalan sales entry:** tidak ada efek khusus yang perlu di-trigger — membatalkan entry di `/sales` atau Rekap Order Hari Ini POS cukup men-soft-delete baris itu; `getChannelBalances()` otomatis mengeluarkannya dari Total Terjual pada request berikutnya. Kalau ini membuat saldo channel jadi negatif (mis. uang sudah diterima melebihi sisa penjualan aktif), UI menampilkan itu sebagai "Lebih Bayar" (warna merah) di halaman detail channel — bukan error, sekadar informasi untuk owner.
+**Efek pembatalan/retur sales entry:** tidak ada efek khusus yang perlu di-trigger — membatalkan atau meretur entry di `/sales` (atau Rekap Order Hari Ini POS untuk Batalkan) cukup update baris itu (`is_deleted` atau `is_returned`); `getChannelBalances()` memfilter keduanya dari Total Terjual pada request berikutnya (query-nya sekarang `is_deleted = false AND is_returned = false`). Kalau ini membuat saldo channel jadi negatif (mis. uang sudah diterima melebihi sisa penjualan aktif), UI menampilkan itu sebagai "Lebih Bayar" (warna merah) di halaman detail channel — bukan error, sekadar informasi untuk owner.
 
 **Dampak ke Laporan & cron:**
 - `Uang Belum Cair` (dashboard & Laporan Sederhana) = jumlah `max(0, outstanding)` semua channel.
@@ -709,15 +745,25 @@ Setiap channel punya satu angka: `Belum Cair = Total Terjual (aktif, sepanjang w
 
 ### 6.6 Reports
 
+> **Update (implementasi):** `getProfitEstimasi()` diganti dari proxy cash-flow (jumlah uang masuk dikurangi uang keluar) menjadi profit margin yang sesungguhnya — lihat "Profit Estimasi" di bawah. `getPerProductReport()` (tab Per Produk) ditambah kolom Stok, HPP Rata-rata, dan Profit. Lihat §6.2 (qty aktual per produk) yang jadi fondasi keduanya.
+
 **Sederhana** (`/reports/simple`):
 - 5 StatCard: Saldo Kas, Penjualan Bulan Ini, Uang Belum Cair, Profit Estimasi, Top Produk
 - 1 line chart (30 hari, per channel)
 - Tombol "Export PDF"
 
+**Profit Estimasi — margin sesungguhnya, bukan proxy cash-flow:**
+- Formula: `Revenue (net_expected penjualan aktif+non-retur dalam periode) − COGS (qty terjual × HPP rata-rata produk itu) − Beban Operasional (cash_transactions related_type='manual', direction=out, dalam periode)`.
+- **Kenapa diganti:** versi lama cuma menjumlahkan `cash_transactions` masuk dikurangi keluar dalam periode — itu arus kas, bukan profit akuntansi. Bayar tagihan kain/jahit besar di bulan ini untuk kardigan yang baru laku bulan depan bikin "profit" bulan ini kelihatan rugi padahal itu cuma investasi stok, bukan kerugian sungguhan.
+- Pembayaran PO (`po_payment`) dan termin penjahit (`tailor_payment`) **sengaja tidak dihitung lagi di sini** — sudah terwakili lewat HPP tiap produk (`getProductCostBasis()`, dihitung dari `production_batch_cost_items` via `production_batches.hpp_per_unit_calc`), jadi kalau tetap dijumlah dari `cash_transactions` juga akan double-count.
+- HPP rata-rata per produk = weighted average dari semua batch **selesai** yang pernah memproduksi produk itu (bobot = `actual_qty` per batch) — bukan reverse-engineer per order terjual, karena penjualan tidak (dan tidak perlu) tertaut ke batch tertentu. Sama filosofinya dengan estimasi FIFO Pencairan Dana: perkirakan secara jujur, jangan pura-pura presisi.
+- `getPenjualanPeriode()` (omset) dan semua fungsi laporan lain yang menjumlahkan `sales_entries` juga dikecualikan dari retur (`is_returned = false`), konsisten dengan Pencairan Dana.
+
 **Lengkap** (`/reports/detailed`):
 - Tabs: P&L | Per Channel | Per Produk | Cash Flow | Per Penjahit | Aging Payout
 - Filter periode (7/30/90 hari, MTD, LTM, custom)
 - Export Excel per tab (pakai `xlsx` library)
+- **Tab Per Produk** menampilkan (selain Qty/Bruto/Bersih yang sudah scoped ke periode filter): **Stok Saat Ini** dan **HPP Rata-rata** yang dihitung sepanjang waktu (bukan scoped ke periode — stok itu snapshot kondisi sekarang, bukan angka periode), dan **Profit** untuk penjualan periode itu (`bersih periode − HPP rata-rata × qty terjual periode`). Stok bisa negatif (oversell/data belum lengkap) — ditampilkan apa adanya berwarna merah, bukan di-floor ke 0, konsisten dengan pola "Lebih Bayar" di Pencairan Dana.
 
 ---
 

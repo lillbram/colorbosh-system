@@ -62,6 +62,12 @@ export const channels = pgTable("channels", {
   type: channelTypeEnum("type").notNull(),
   defaultFeePct: numeric("default_fee_pct", { precision: 5, scale: 2 }),
   defaultHoldDays: integer("default_hold_days"),
+  // false for channels where payment is received directly at sale time (e.g.
+  // "Paket Usaha") — such channels are excluded from Pencairan Dana's Belum
+  // Cair tracking entirely, and recording a sale for one immediately posts a
+  // matching cash_transaction instead of waiting for a platform payout.
+  // Default true (TikTok/Shopee-style: sale now, payout later). See §6.4.
+  requiresDisbursement: boolean("requires_disbursement").default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

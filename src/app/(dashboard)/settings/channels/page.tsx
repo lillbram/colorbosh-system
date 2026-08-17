@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { channels } from "@/db/schema";
 import { Header } from "@/components/layout/header";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -47,6 +48,7 @@ export default async function ChannelsPage() {
                   <TableHead>Nama</TableHead>
                   <TableHead>Fee Default</TableHead>
                   <TableHead>Hold Default</TableHead>
+                  <TableHead>Pencairan Dana</TableHead>
                   <TableHead className="w-24 text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -56,6 +58,13 @@ export default async function ChannelsPage() {
                     <TableCell className="font-medium">{c.name}</TableCell>
                     <TableCell className="font-mono-num">{c.defaultFeePct}%</TableCell>
                     <TableCell className="font-mono-num">{c.defaultHoldDays} hari</TableCell>
+                    <TableCell>
+                      {c.requiresDisbursement ?? true ? (
+                        <Badge variant="neutral">Bertahap</Badge>
+                      ) : (
+                        <Badge variant="success">Langsung</Badge>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <div className="flex justify-end">
                         <ChannelFormDialog channel={c} />

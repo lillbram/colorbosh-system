@@ -42,6 +42,15 @@ export const salesEntries = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     createdBy: uuid("created_by").references(() => users.id),
     isDeleted: boolean("is_deleted").default(false),
+    // Distinct from isDeleted: a retur is a post-delivery return of a
+    // legitimately fulfilled order (goods shipped, arrived, then sent
+    // back) — isDeleted is for pre-fulfillment mistakes/cancellations.
+    // Both are excluded from revenue/stock/profit and disbursement
+    // calculations, but shown separately in the UI since they mean
+    // different things to the business. See CLAUDE.md §6.3.
+    isReturned: boolean("is_returned").default(false),
+    returnedAt: timestamp("returned_at", { withTimezone: true }),
+    returnNote: text("return_note"),
   },
   (table) => [unique().on(table.channelId, table.orderRef)]
 );

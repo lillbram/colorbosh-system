@@ -48,6 +48,11 @@ export const productionBatchProducts = pgTable("production_batch_products", {
     .notNull(),
   productId: uuid("product_id").references(() => products.id),
   qty: integer("qty").notNull(),
+  // Filled per-product when the batch is marked finished — defaults to `qty`
+  // but editable per line. Without this, "actual output" only existed as one
+  // aggregate number for the whole batch, which made per-product stock
+  // tracking impossible for multi-product batches. See CLAUDE.md §6.2.
+  actualQty: integer("actual_qty"),
 });
 
 // Persisted breakdown of a batch's estimated production cost — replaces the
