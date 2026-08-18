@@ -1,5 +1,6 @@
 import { type LucideIcon, TrendingUp, TrendingDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +11,7 @@ type StatCardProps = {
   isMoney?: boolean;
   trend?: { direction: "up" | "down" | "none"; percent: number };
   footer?: string;
+  info?: React.ReactNode;
 };
 
 export function StatCard({
@@ -19,6 +21,7 @@ export function StatCard({
   isMoney = false,
   trend,
   footer,
+  info,
 }: StatCardProps) {
   const displayValue = isMoney && typeof value === "number" ? formatIDR(value) : value;
 
@@ -27,6 +30,7 @@ export function StatCard({
       <div className="flex items-center gap-1.5 text-sm text-muted">
         <Icon className="size-4" />
         <span>{label}</span>
+        {info && <InfoTooltip>{info}</InfoTooltip>}
       </div>
       <div className="font-mono-num mt-2 text-[28px] font-bold text-ink">
         {displayValue}

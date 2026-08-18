@@ -7,6 +7,7 @@ import { StatCard } from "@/components/stats/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChannelTrendChart } from "@/components/dashboard/channel-trend-chart";
 import { ExportPdfButton } from "@/components/shared/export-pdf-button";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatDateLong } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -91,16 +92,51 @@ async function SimpleReport() {
 
       <div className="print-area space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard icon={Wallet} label="Saldo Kas" value={saldoKas} isMoney />
-          <StatCard icon={ShoppingBag} label="Penjualan Bulan Ini" value={penjualanBulanIni} isMoney />
-          <StatCard icon={Clock} label="Uang Belum Cair" value={uangBelumCair} isMoney />
-          <StatCard icon={TrendingUp} label="Profit Estimasi" value={profitEstimasi} isMoney />
-          <StatCard icon={Star} label="Top Produk" value={topProductLabel} />
+          <StatCard
+            icon={Wallet}
+            label="Saldo Kas"
+            value={saldoKas}
+            isMoney
+            info="Saldo awal semua akun (bank/tunai/e-wallet) ditambah semua Uang Masuk, dikurangi semua Uang Keluar yang sudah tercatat di Arus Kas — termasuk yang otomatis dari pembayaran kain, termin penjahit, dan pencairan dana."
+          />
+          <StatCard
+            icon={ShoppingBag}
+            label="Penjualan Bulan Ini"
+            value={penjualanBulanIni}
+            isMoney
+            info="Total Bruto (sebelum potongan fee platform & diskon) semua penjualan aktif bulan berjalan, dari semua channel. Order yang dibatalkan atau diretur tidak dihitung."
+          />
+          <StatCard
+            icon={Clock}
+            label="Uang Belum Cair"
+            value={uangBelumCair}
+            isMoney
+            info="Total penjualan aktif dari channel TikTok Shop/Shopee (dan sejenisnya) yang belum dicairkan platform ke rekening, dihitung dari saldo berjalan tiap channel: Total Terjual dikurangi Total Diterima. Channel dengan pencairan langsung (mis. Paket Usaha) tidak masuk hitungan ini karena uangnya sudah masuk saat order dibuat."
+          />
+          <StatCard
+            icon={TrendingUp}
+            label="Profit Estimasi"
+            value={profitEstimasi}
+            isMoney
+            info="Penjualan Bersih bulan ini dikurangi biaya produksi produk yang terjual (HPP rata-rata dari batch yang sudah selesai) dikurangi pengeluaran operasional (listrik, sewa, gaji, dst). Bukan sekadar uang masuk dikurangi uang keluar — pembayaran kain/penjahit tidak dihitung dua kali karena sudah tercermin di HPP produk."
+          />
+          <StatCard
+            icon={Star}
+            label="Top Produk"
+            value={topProductLabel}
+            info="Produk dengan Total Bruto tertinggi dari semua penjualan aktif bulan ini."
+          />
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Penjualan 30 Hari Terakhir per Channel</CardTitle>
+            <CardTitle className="flex items-center gap-1.5">
+              Penjualan 30 Hari Terakhir per Channel
+              <InfoTooltip>
+                Total Bruto penjualan aktif per hari, dikelompokkan per channel, untuk 30 hari
+                terakhir sampai hari ini.
+              </InfoTooltip>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ChannelTrendChart channelNames={trend.channelNames} data={trend.data} />

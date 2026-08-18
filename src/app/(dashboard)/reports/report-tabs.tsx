@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatDate, formatIDR } from "@/lib/format";
 
 type PnL = Awaited<ReturnType<typeof import("@/lib/reports").getPnLSummary>>;
@@ -69,7 +70,15 @@ export function ReportTabs({
 
       <TabsContent value="pnl">
         <Card>
-          <div className="flex justify-end p-4 pb-0">
+          <div className="flex items-center justify-between gap-2 p-4 pb-0">
+            <InfoTooltip>
+              Dihitung dari data periode filter di atas: Total Penjualan/Diskon/Fee Platform dari
+              semua penjualan aktif (bukan dibatalkan/retur); Bayar Supplier dari pembayaran
+              Pemesanan Kain; Bayar Penjahit dari termin yang sudah lunas; Operasional dari
+              transaksi kas manual (bukan otomatis). Laba Estimasi = Penjualan Bersih dikurangi
+              ketiga pengeluaran itu — ini beda dari Profit Estimasi di Laporan Sederhana yang
+              memakai HPP produk, bukan pembayaran kain/penjahit langsung.
+            </InfoTooltip>
             <ExportButton
               filename="laba-rugi"
               rows={[
@@ -141,7 +150,12 @@ export function ReportTabs({
 
       <TabsContent value="channel">
         <Card>
-          <div className="flex justify-end p-4 pb-0">
+          <div className="flex items-center justify-between gap-2 p-4 pb-0">
+            <InfoTooltip>
+              Transaksi, Bruto, dan Bersih dijumlahkan per channel dari semua penjualan aktif
+              (bukan dibatalkan/retur) dalam periode filter di atas. Bersih = Bruto dikurangi fee
+              platform estimasi dan diskon.
+            </InfoTooltip>
             <ExportButton
               filename="per-channel"
               rows={perChannel.map((c) => ({
@@ -177,7 +191,15 @@ export function ReportTabs({
 
       <TabsContent value="product">
         <Card>
-          <div className="flex justify-end p-4 pb-0">
+          <div className="flex items-center justify-between gap-2 p-4 pb-0">
+            <InfoTooltip>
+              Qty/Bruto/Bersih dari penjualan aktif dalam periode filter di atas. HPP Rata-rata &
+              Stok dihitung sepanjang waktu (bukan hanya periode filter): HPP Rata-rata =
+              rata-rata tertimbang biaya produksi dari semua batch produk itu yang sudah selesai;
+              Stok = total pernah diproduksi dikurangi total pernah terjual (bisa negatif kalau
+              data belum lengkap). Profit = Bersih periode ini dikurangi (HPP Rata-rata × Qty
+              terjual periode ini).
+            </InfoTooltip>
             <ExportButton
               filename="per-produk"
               rows={perProduct.map((p) => ({
@@ -235,7 +257,12 @@ export function ReportTabs({
 
       <TabsContent value="cashflow">
         <Card>
-          <div className="flex justify-end p-4 pb-0">
+          <div className="flex items-center justify-between gap-2 p-4 pb-0">
+            <InfoTooltip>
+              Semua transaksi di Arus Kas dalam periode filter di atas — termasuk yang otomatis
+              (pembayaran kain, termin penjahit, pencairan dana, penjualan langsung) maupun yang
+              dicatat manual.
+            </InfoTooltip>
             <ExportButton
               filename="cash-flow"
               rows={cashFlow.map((c) => ({
@@ -278,7 +305,13 @@ export function ReportTabs({
 
       <TabsContent value="tailor">
         <Card>
-          <div className="flex justify-end p-4 pb-0">
+          <div className="flex items-center justify-between gap-2 p-4 pb-0">
+            <InfoTooltip>
+              Jumlah Batch = batch produksi yang mulai dalam periode filter di atas. Dibayar =
+              termin yang lunas dalam periode itu. Tertunda = semua termin yang belum lunas untuk
+              penjahit ini, dari batch kapan saja (tidak dibatasi periode filter, karena ini
+              tunggakan yang masih berlaku sampai sekarang).
+            </InfoTooltip>
             <ExportButton
               filename="per-penjahit"
               rows={perTailor.map((t) => ({
@@ -316,7 +349,15 @@ export function ReportTabs({
 
       <TabsContent value="aging">
         <Card>
-          <div className="flex justify-end p-4 pb-0">
+          <div className="flex items-center justify-between gap-2 p-4 pb-0">
+            <InfoTooltip>
+              Estimasi FIFO, bukan pencocokan pasti — TikTok Shop/Shopee tidak pernah memberi
+              rincian order per pencairan. Penjualan tertua channel itu dianggap &ldquo;belum
+              cair&rdquo; lebih dulu sampai jumlah Total Diterima channel tersebut habis
+              terpakai. Channel
+              dengan pencairan langsung (mis. Paket Usaha) tidak muncul di sini karena tidak
+              pernah menunggu payout.
+            </InfoTooltip>
             <ExportButton
               filename="aging-payout"
               rows={aging.map((a) => ({
