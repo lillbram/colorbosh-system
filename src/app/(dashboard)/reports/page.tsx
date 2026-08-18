@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { Wallet, ShoppingBag, Clock, TrendingUp, Star } from "lucide-react";
+import { Wallet, ShoppingBag, TrendingUp, Star } from "lucide-react";
 import { endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/stats/stat-card";
@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import {
   getSaldoKas,
   getPenjualanPeriode,
-  getUangBelumCair,
   getProfitEstimasi,
   getTopProduk,
   getRevenueTrendByChannel,
@@ -21,8 +20,6 @@ import {
   getPerChannelReport,
   getPerProductReport,
   getCashFlowReport,
-  getPerTailorReport,
-  getAgingPayoutReport,
 } from "@/lib/reports";
 import { ReportTabs } from "./report-tabs";
 
@@ -69,15 +66,13 @@ async function SimpleReport() {
   const trendStart = format(subDays(now, 29), "yyyy-MM-dd");
   const trendEnd = format(now, "yyyy-MM-dd");
 
-  const [saldoKas, penjualanBulanIni, uangBelumCair, profitEstimasi, topProduk, trend] =
-    await Promise.all([
-      getSaldoKas(),
-      getPenjualanPeriode(monthStart, monthEnd),
-      getUangBelumCair(),
-      getProfitEstimasi(monthStart, monthEnd),
-      getTopProduk(monthStart, monthEnd, 1),
-      getRevenueTrendByChannel(trendStart, trendEnd),
-    ]);
+  const [saldoKas, penjualanBulanIni, profitEstimasi, topProduk, trend] = await Promise.all([
+    getSaldoKas(),
+    getPenjualanPeriode(monthStart, monthEnd),
+    getProfitEstimasi(monthStart, monthEnd),
+    getTopProduk(monthStart, monthEnd, 1),
+    getRevenueTrendByChannel(trendStart, trendEnd),
+  ]);
 
   const topProductLabel = topProduk[0]?.name ?? "-";
 
@@ -91,13 +86,13 @@ async function SimpleReport() {
       </div>
 
       <div className="print-area space-y-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             icon={Wallet}
             label="Saldo Kas"
             value={saldoKas}
             isMoney
-            info="Saldo awal semua akun (bank/tunai/e-wallet) ditambah semua Uang Masuk, dikurangi semua Uang Keluar yang sudah tercatat di Arus Kas — termasuk yang otomatis dari pembayaran kain, termin penjahit, dan pencairan dana."
+            info="Saldo awal semua akun (bank/tunai/e-wallet) ditambah semua Uang Masuk, dikurangi semua Uang Keluar yang sudah tercatat di Arus Kas."
           />
           <StatCard
             icon={ShoppingBag}
@@ -107,18 +102,11 @@ async function SimpleReport() {
             info="Total Bruto (sebelum potongan fee platform & diskon) semua penjualan aktif bulan berjalan, dari semua channel. Order yang dibatalkan atau diretur tidak dihitung."
           />
           <StatCard
-            icon={Clock}
-            label="Uang Belum Cair"
-            value={uangBelumCair}
-            isMoney
-            info="Total penjualan aktif dari channel TikTok Shop/Shopee (dan sejenisnya) yang belum dicairkan platform ke rekening, dihitung dari saldo berjalan tiap channel: Total Terjual dikurangi Total Diterima. Channel dengan pencairan langsung (mis. Paket Usaha) tidak masuk hitungan ini karena uangnya sudah masuk saat order dibuat."
-          />
-          <StatCard
             icon={TrendingUp}
             label="Profit Estimasi"
             value={profitEstimasi}
             isMoney
-            info="Penjualan Bersih bulan ini dikurangi biaya produksi produk yang terjual (HPP rata-rata dari batch yang sudah selesai) dikurangi pengeluaran operasional (listrik, sewa, gaji, dst). Bukan sekadar uang masuk dikurangi uang keluar — pembayaran kain/penjahit tidak dihitung dua kali karena sudah tercermin di HPP produk."
+            info="Penjualan Bersih bulan ini dikurangi HPP produk yang terjual (diatur per produk di Pengaturan > Produk) dikurangi pengeluaran operasional (listrik, sewa, gaji, dst). Bukan sekadar uang masuk dikurangi uang keluar."
           />
           <StatCard
             icon={Star}
@@ -152,24 +140,15 @@ async function DetailedReportContent({ period }: { period: string }) {
   const startStr = format(start, "yyyy-MM-dd");
   const endStr = format(end, "yyyy-MM-dd");
 
-  const [pnl, perChannel, perProduct, cashFlow, perTailor, aging] = await Promise.all([
+  const [pnl, perChannel, perProduct, cashFlow] = await Promise.all([
     getPnLSummary(startStr, endStr),
     getPerChannelReport(startStr, endStr),
     getPerProductReport(startStr, endStr),
     getCashFlowReport(startStr, endStr),
-    getPerTailorReport(startStr, endStr),
-    getAgingPayoutReport(),
   ]);
 
   return (
-    <ReportTabs
-      pnl={pnl}
-      perChannel={perChannel}
-      perProduct={perProduct}
-      cashFlow={cashFlow}
-      perTailor={perTailor}
-      aging={aging}
-    />
+    <ReportTabs pnl={pnl} perChannel={perChannel} perProduct={perProduct} cashFlow={cashFlow} />
   );
 }
 
@@ -210,7 +189,7 @@ export default async function ReportsPage({
     <>
       <Header
         title="Laporan"
-        subtitle="Laporan sederhana untuk ringkasan cepat, laporan lengkap untuk detail per channel/produk/penjahit."
+        subtitle="Laporan sederhana untuk ringkasan cepat, laporan lengkap untuk detail per channel/produk."
       />
 
       <main className="flex-1 space-y-4 p-6">

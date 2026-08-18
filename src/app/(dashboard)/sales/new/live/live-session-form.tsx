@@ -22,7 +22,6 @@ import { cn } from "@/lib/utils";
 import { createLiveSession } from "../../actions";
 
 type Option = { id: string; name: string };
-type ChannelOption = Option & { requiresDisbursement: boolean | null };
 type ProductOption = Option & { basePrice: string | null; avgCost: number };
 
 export function LiveSessionForm({
@@ -30,7 +29,7 @@ export function LiveSessionForm({
   products,
   accounts,
 }: {
-  channels: ChannelOption[];
+  channels: Option[];
   products: ProductOption[];
   accounts: Option[];
 }) {
@@ -40,9 +39,6 @@ export function LiveSessionForm({
   const [total, setTotal] = useState(0);
   const [profit, setProfit] = useState(0);
   const [isPending, startTransition] = useTransition();
-
-  const selectedChannel = channels.find((c) => c.id === channelId);
-  const needsAccount = selectedChannel ? selectedChannel.requiresDisbursement === false : false;
 
   return (
     <form
@@ -91,29 +87,24 @@ export function LiveSessionForm({
         </CardContent>
       </Card>
 
-      {needsAccount && (
-        <Card>
-          <CardContent className="space-y-1.5 pt-6">
-            <Label>Akun Tujuan</Label>
-            <p className="text-xs text-muted">
-              Channel ini uangnya diterima langsung — pilih akun kas/bank yang menerima.
-            </p>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih akun" />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <input type="hidden" name="accountId" value={accountId} />
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardContent className="space-y-1.5 pt-6">
+          <Label>Akun Tujuan</Label>
+          <Select value={accountId} onValueChange={setAccountId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Pilih akun" />
+            </SelectTrigger>
+            <SelectContent>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <input type="hidden" name="accountId" value={accountId} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -130,8 +121,8 @@ export function LiveSessionForm({
             <span className="inline-flex items-center gap-1 text-muted">
               Estimasi Profit
               <InfoTooltip>
-                Harga jual dikurangi HPP produk (rata-rata biaya produksi dari batch yang sudah
-                selesai) untuk tiap baris, dijumlahkan. Belum memperhitungkan fee platform.
+                Harga jual dikurangi HPP produk (diatur di Pengaturan &gt; Produk) untuk tiap
+                baris, dijumlahkan. Belum memperhitungkan fee platform.
               </InfoTooltip>
               :{" "}
               <span
@@ -165,7 +156,7 @@ export function LiveSessionForm({
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={isPending || !channelId || (needsAccount && !accountId)}>
+        <Button type="submit" disabled={isPending || !channelId || !accountId}>
           {isPending ? "Menyimpan..." : "Simpan Rekap Live"}
         </Button>
       </div>

@@ -21,8 +21,6 @@ type PnL = Awaited<ReturnType<typeof import("@/lib/reports").getPnLSummary>>;
 type PerChannel = Awaited<ReturnType<typeof import("@/lib/reports").getPerChannelReport>>;
 type PerProduct = Awaited<ReturnType<typeof import("@/lib/reports").getPerProductReport>>;
 type CashFlow = Awaited<ReturnType<typeof import("@/lib/reports").getCashFlowReport>>;
-type PerTailor = Awaited<ReturnType<typeof import("@/lib/reports").getPerTailorReport>>;
-type Aging = Awaited<ReturnType<typeof import("@/lib/reports").getAgingPayoutReport>>;
 
 function ExportButton({ filename, rows }: { filename: string; rows: Record<string, unknown>[] }) {
   return (
@@ -85,15 +83,11 @@ export function ReportTabs({
   perChannel,
   perProduct,
   cashFlow,
-  perTailor,
-  aging,
 }: {
   pnl: PnL;
   perChannel: PerChannel;
   perProduct: PerProduct;
   cashFlow: CashFlow;
-  perTailor: PerTailor;
-  aging: Aging;
 }) {
   return (
     <Tabs defaultValue="pnl">
@@ -102,8 +96,6 @@ export function ReportTabs({
         <TabsTrigger value="channel">Per Channel</TabsTrigger>
         <TabsTrigger value="product">Per Produk</TabsTrigger>
         <TabsTrigger value="cashflow">Cash Flow</TabsTrigger>
-        <TabsTrigger value="tailor">Per Penjahit</TabsTrigger>
-        <TabsTrigger value="aging">Aging Payout</TabsTrigger>
       </TabsList>
 
       <TabsContent value="pnl">
@@ -111,12 +103,10 @@ export function ReportTabs({
           <div className="flex items-center justify-between gap-2 p-4 pb-0">
             <InfoTooltip>
               Dihitung dari data periode filter di atas: Total Penjualan/Diskon/Fee Platform dari
-              semua penjualan aktif (bukan dibatalkan/retur); Bayar Supplier dari pembayaran
-              Pemesanan Kain; Bayar Penjahit dari termin yang sudah lunas; Operasional dari
-              transaksi kas manual (bukan otomatis). Laba Estimasi = Penjualan Bersih dikurangi
-              ketiga pengeluaran itu — ini beda dari Profit Estimasi di Laporan Sederhana yang
-              memakai HPP produk, bukan pembayaran kain/penjahit langsung. Klik baris &ldquo;Total
-              Penjualan&rdquo; untuk lihat rincian per channel.
+              semua penjualan aktif (bukan dibatalkan/retur); Operasional dari transaksi kas
+              manual (bukan otomatis). Laba Estimasi = Penjualan Bersih dikurangi Operasional —
+              ini beda dari Profit Estimasi di Laporan Sederhana yang juga mengurangi HPP produk
+              terjual. Klik baris &ldquo;Total Penjualan&rdquo; untuk lihat rincian per channel.
             </InfoTooltip>
             <ExportButton
               filename="laba-rugi"
@@ -129,8 +119,6 @@ export function ReportTabs({
                 { Item: "Diskon", Nominal: -pnl.totalDiskon },
                 { Item: "Fee Platform Estimasi", Nominal: -pnl.totalFeePlatform },
                 { Item: "Penjualan Bersih", Nominal: pnl.totalBersih },
-                { Item: "Bayar Supplier", Nominal: -pnl.totalBayarSupplier },
-                { Item: "Bayar Penjahit", Nominal: -pnl.totalBayarPenjahit },
                 { Item: "Operasional", Nominal: -pnl.totalOperasional },
                 { Item: "Laba Estimasi", Nominal: pnl.labaEstimasi },
               ]}
@@ -155,18 +143,6 @@ export function ReportTabs({
                 <TableCell className="font-medium">Penjualan Bersih</TableCell>
                 <TableCell className="text-right font-mono-num font-medium">
                   {formatIDR(pnl.totalBersih)}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="text-muted">Bayar Supplier</TableCell>
-                <TableCell className="text-right font-mono-num text-danger">
-                  -{formatIDR(pnl.totalBayarSupplier)}
-                </TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell className="text-muted">Bayar Penjahit</TableCell>
-                <TableCell className="text-right font-mono-num text-danger">
-                  -{formatIDR(pnl.totalBayarPenjahit)}
                 </TableCell>
               </TableRow>
               <TableRow>
@@ -233,12 +209,10 @@ export function ReportTabs({
         <Card>
           <div className="flex items-center justify-between gap-2 p-4 pb-0">
             <InfoTooltip>
-              Qty/Bruto/Bersih dari penjualan aktif dalam periode filter di atas. HPP Rata-rata &
-              Stok dihitung sepanjang waktu (bukan hanya periode filter): HPP Rata-rata =
-              rata-rata tertimbang biaya produksi dari semua batch produk itu yang sudah selesai;
-              Stok = total pernah diproduksi dikurangi total pernah terjual (bisa negatif kalau
-              data belum lengkap). Profit = Bersih periode ini dikurangi (HPP Rata-rata × Qty
-              terjual periode ini).
+              Qty/Bruto/Bersih dari penjualan aktif dalam periode filter di atas. HPP diambil dari
+              nilai yang diatur per produk di Pengaturan &gt; Produk (bukan periode filter —
+              angkanya sama untuk periode manapun sampai diubah manual). Profit = Bersih periode
+              ini dikurangi (HPP × Qty terjual periode ini).
             </InfoTooltip>
             <ExportButton
               filename="per-produk"
@@ -247,17 +221,11 @@ export function ReportTabs({
                 Qty: p.qty,
                 "Total Bruto": p.gross,
                 "Total Bersih": p.bersih,
-                "HPP Rata-rata": p.avgCost,
+                HPP: p.hpp,
                 Profit: p.profit,
-                "Stok Saat Ini": p.stock,
               }))}
             />
           </div>
-          <p className="px-4 pb-2 text-xs text-muted">
-            Stok &amp; HPP rata-rata dihitung sepanjang waktu (bukan hanya periode filter di atas) —
-            HPP rata-rata dari semua batch selesai untuk produk itu, stok = total pernah diproduksi
-            dikurangi total pernah terjual.
-          </p>
           <Table>
             <TableHeader>
               <TableRow>
@@ -265,9 +233,8 @@ export function ReportTabs({
                 <TableHead>Qty Terjual</TableHead>
                 <TableHead className="text-right">Bruto</TableHead>
                 <TableHead className="text-right">Bersih</TableHead>
-                <TableHead className="text-right">HPP Rata-rata</TableHead>
+                <TableHead className="text-right">HPP</TableHead>
                 <TableHead className="text-right">Profit</TableHead>
-                <TableHead className="text-right">Stok Saat Ini</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -277,16 +244,11 @@ export function ReportTabs({
                   <TableCell className="font-mono-num">{p.qty}</TableCell>
                   <TableCell className="text-right font-mono-num">{formatIDR(p.gross)}</TableCell>
                   <TableCell className="text-right font-mono-num">{formatIDR(p.bersih)}</TableCell>
-                  <TableCell className="text-right font-mono-num">{formatIDR(p.avgCost)}</TableCell>
+                  <TableCell className="text-right font-mono-num">{formatIDR(p.hpp)}</TableCell>
                   <TableCell
                     className={`text-right font-mono-num ${p.profit < 0 ? "text-danger" : "text-success"}`}
                   >
                     {formatIDR(p.profit)}
-                  </TableCell>
-                  <TableCell
-                    className={`text-right font-mono-num ${p.stock < 0 ? "text-danger" : "text-ink"}`}
-                  >
-                    {p.stock}
                   </TableCell>
                 </TableRow>
               ))}
@@ -299,9 +261,8 @@ export function ReportTabs({
         <Card>
           <div className="flex items-center justify-between gap-2 p-4 pb-0">
             <InfoTooltip>
-              Semua transaksi di Arus Kas dalam periode filter di atas — termasuk yang otomatis
-              (pembayaran kain, termin penjahit, pencairan dana, penjualan langsung) maupun yang
-              dicatat manual.
+              Semua transaksi di Arus Kas dalam periode filter di atas — baik yang otomatis dari
+              Penjualan maupun yang dicatat manual.
             </InfoTooltip>
             <ExportButton
               filename="cash-flow"
@@ -335,102 +296,6 @@ export function ReportTabs({
                   >
                     {c.arah === "in" ? "+" : "-"}
                     {formatIDR(c.nominal)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      </TabsContent>
-
-      <TabsContent value="tailor">
-        <Card>
-          <div className="flex items-center justify-between gap-2 p-4 pb-0">
-            <InfoTooltip>
-              Jumlah Batch = batch produksi yang mulai dalam periode filter di atas. Dibayar =
-              termin yang lunas dalam periode itu. Tertunda = semua termin yang belum lunas untuk
-              penjahit ini, dari batch kapan saja (tidak dibatasi periode filter, karena ini
-              tunggakan yang masih berlaku sampai sekarang).
-            </InfoTooltip>
-            <ExportButton
-              filename="per-penjahit"
-              rows={perTailor.map((t) => ({
-                Penjahit: t.name,
-                "Jumlah Batch": t.batchCount,
-                "Total Dibayar": t.totalDibayar,
-                "Total Tertunda": t.totalTertunda,
-              }))}
-            />
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Penjahit</TableHead>
-                <TableHead>Jumlah Batch</TableHead>
-                <TableHead className="text-right">Dibayar</TableHead>
-                <TableHead className="text-right">Tertunda</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {perTailor.map((t) => (
-                <TableRow key={t.name}>
-                  <TableCell>{t.name}</TableCell>
-                  <TableCell className="font-mono-num">{t.batchCount}</TableCell>
-                  <TableCell className="text-right font-mono-num">{formatIDR(t.totalDibayar)}</TableCell>
-                  <TableCell className="text-right font-mono-num text-warning">
-                    {formatIDR(t.totalTertunda)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      </TabsContent>
-
-      <TabsContent value="aging">
-        <Card>
-          <div className="flex items-center justify-between gap-2 p-4 pb-0">
-            <InfoTooltip>
-              Estimasi FIFO, bukan pencocokan pasti — TikTok Shop/Shopee tidak pernah memberi
-              rincian order per pencairan. Penjualan tertua channel itu dianggap &ldquo;belum
-              cair&rdquo; lebih dulu sampai jumlah Total Diterima channel tersebut habis
-              terpakai. Channel
-              dengan pencairan langsung (mis. Paket Usaha) tidak muncul di sini karena tidak
-              pernah menunggu payout.
-            </InfoTooltip>
-            <ExportButton
-              filename="aging-payout"
-              rows={aging.map((a) => ({
-                Channel: a.channelName,
-                Periode: a.periode,
-                "Belum Cair Sejak": a.expectedPayoutDate,
-                "Hari Terlambat": a.daysOverdue,
-                Status: a.bucket,
-                Nominal: a.expectedAmount,
-              }))}
-            />
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Channel</TableHead>
-                <TableHead>Periode</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Nominal</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {aging.map((a, i) => (
-                <TableRow key={i}>
-                  <TableCell>{a.channelName}</TableCell>
-                  <TableCell className="text-muted">{a.periode}</TableCell>
-                  <TableCell>
-                    <span className={a.daysOverdue > 14 ? "text-danger" : a.daysOverdue > 0 ? "text-warning" : "text-muted"}>
-                      {a.bucket}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right font-mono-num">
-                    {formatIDR(a.expectedAmount)}
                   </TableCell>
                 </TableRow>
               ))}

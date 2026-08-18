@@ -24,7 +24,7 @@ import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { createPosOrder, cancelPosOrder } from "../../actions";
 
 type Product = { id: string; name: string; sku: string | null; basePrice: string | null; avgCost: number };
-type Channel = { id: string; name: string; requiresDisbursement: boolean | null };
+type Channel = { id: string; name: string };
 type Account = { id: string; name: string };
 type CartItem = { productId: string; name: string; qty: number; unitPrice: number; avgCost: number };
 type TodayOrder = {
@@ -53,9 +53,6 @@ export function PosClient({
   const [accountId, setAccountId] = useState("");
   const [buyerNote, setBuyerNote] = useState("");
   const [isPending, startTransition] = useTransition();
-
-  const selectedChannel = channels.find((c) => c.id === channelId);
-  const needsAccount = selectedChannel ? selectedChannel.requiresDisbursement === false : false;
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -109,7 +106,7 @@ export function PosClient({
   }
 
   function handleSave() {
-    if (cart.length === 0 || !channelId || (needsAccount && !accountId)) return;
+    if (cart.length === 0 || !channelId || !accountId) return;
 
     const formData = new FormData();
     formData.set("channelId", channelId);
@@ -204,25 +201,20 @@ export function PosClient({
               </Select>
             </div>
 
-            {needsAccount && (
-              <div className="space-y-1.5 rounded-lg border border-border/70 bg-canvas/40 p-2.5">
-                <p className="text-xs text-muted">
-                  Channel ini uangnya diterima langsung — pilih akun tujuan.
-                </p>
-                <Select value={accountId} onValueChange={setAccountId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih akun" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih akun tujuan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             {cart.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted">
@@ -320,7 +312,7 @@ export function PosClient({
 
             <Button
               className="w-full"
-              disabled={cart.length === 0 || !channelId || (needsAccount && !accountId) || isPending}
+              disabled={cart.length === 0 || !channelId || !accountId || isPending}
               onClick={handleSave}
             >
               {isPending ? "Menyimpan..." : "Simpan Order"}

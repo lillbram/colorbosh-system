@@ -17,22 +17,20 @@ import {
 
 async function getChannel(channelId: string) {
   const [channel] = await db
-    .select({ defaultFeePct: channels.defaultFeePct, requiresDisbursement: channels.requiresDisbursement, name: channels.name })
+    .select({ defaultFeePct: channels.defaultFeePct, name: channels.name })
     .from(channels)
     .where(eq(channels.id, channelId));
   return {
     feePct: Number(channel?.defaultFeePct ?? 0),
-    requiresDisbursement: channel?.requiresDisbursement ?? true,
     name: channel?.name ?? "",
   };
 }
 
 /**
- * For channels where money is received directly at sale time (requiresDisbursement
- * = false, e.g. "Paket Usaha") — posts a matching cash_transaction immediately
- * instead of waiting for a Pencairan Dana payout that will never come. See §6.4.
+ * Every sale posts cash immediately — this is a POS-style system, not a
+ * platform-payout-reconciliation one. See CLAUDE.md §6.3/§6.4.
  */
-async function postDirectSettlementCash(
+async function postSaleCash(
   tx: typeof db,
   params: { accountId: string; amount: number; txnDate: string; channelName: string; createdBy: string | null }
 ) {
@@ -42,7 +40,7 @@ async function postDirectSettlementCash(
     direction: "in",
     amount: String(params.amount),
     relatedType: "manual",
-    description: `Penjualan langsung - ${params.channelName}`,
+    description: `Penjualan - ${params.channelName}`,
     createdBy: params.createdBy,
   });
 }
@@ -55,9 +53,6 @@ export async function createManualSale(formData: FormData) {
 
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
-  if (!channel.requiresDisbursement && !parsed.data.accountId) {
-    return { error: "Pilih akun tujuan — channel ini uangnya diterima langsung" };
-  }
   const platformFeeEst = Math.round((parsed.data.grossAmount * channel.feePct) / 100);
   const netExpected = parsed.data.grossAmount - platformFeeEst - parsed.data.discount;
   let newId = "";
@@ -84,15 +79,13 @@ export async function createManualSale(formData: FormData) {
           .returning({ id: salesEntries.id });
         newId = inserted.id;
 
-        if (!channel.requiresDisbursement && parsed.data.accountId) {
-          await postDirectSettlementCash(tx, {
-            accountId: parsed.data.accountId,
-            amount: netExpected,
-            txnDate: parsed.data.entryDate,
-            channelName: channel.name,
-            createdBy: actorId,
-          });
-        }
+        await postSaleCash(tx, {
+          accountId: parsed.data.accountId,
+          amount: netExpected,
+          txnDate: parsed.data.entryDate,
+          channelName: channel.name,
+          createdBy: actorId,
+        });
       }
     );
   } catch {
@@ -120,9 +113,6 @@ export async function createLiveSession(formData: FormData) {
 
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
-  if (!channel.requiresDisbursement && !parsed.data.accountId) {
-    return { error: "Pilih akun tujuan — channel ini uangnya diterima langsung" };
-  }
   const totalGross = parsed.data.entries.reduce((sum, e) => sum + e.qty * e.unitPrice, 0);
   let newSessionId = "";
   let totalNetExpected = 0;
@@ -165,15 +155,13 @@ export async function createLiveSession(formData: FormData) {
           })
         );
 
-        if (!channel.requiresDisbursement && parsed.data.accountId) {
-          await postDirectSettlementCash(tx, {
-            accountId: parsed.data.accountId,
-            amount: totalNetExpected,
-            txnDate: parsed.data.sessionDate,
-            channelName: channel.name,
-            createdBy: actorId,
-          });
-        }
+        await postSaleCash(tx, {
+          accountId: parsed.data.accountId,
+          amount: totalNetExpected,
+          txnDate: parsed.data.sessionDate,
+          channelName: channel.name,
+          createdBy: actorId,
+        });
       }
     );
   } catch {
@@ -201,8 +189,10 @@ export async function importSalesCsv(formData: FormData) {
 
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
+  const today = format(new Date(), "yyyy-MM-dd");
 
   let insertedCount = 0;
+  let totalNetExpected = 0;
 
   try {
     await withTransaction(async (tx) => {
@@ -226,7 +216,20 @@ export async function importSalesCsv(formData: FormData) {
           })
           .returning({ id: salesEntries.id });
 
-        if (result.length > 0) insertedCount += 1;
+        if (result.length > 0) {
+          insertedCount += 1;
+          totalNetExpected += row.grossAmount - platformFeeEst;
+        }
+      }
+
+      if (totalNetExpected > 0) {
+        await postSaleCash(tx, {
+          accountId: parsed.data.accountId,
+          amount: totalNetExpected,
+          txnDate: today,
+          channelName: channel.name,
+          createdBy: actorId,
+        });
       }
     });
   } catch {
@@ -234,6 +237,7 @@ export async function importSalesCsv(formData: FormData) {
   }
 
   revalidatePath("/sales");
+  revalidatePath("/cash-flow");
   return { success: true, insertedCount, skipped: parsed.data.rows.length - insertedCount };
 }
 
@@ -253,9 +257,6 @@ export async function createPosOrder(formData: FormData) {
 
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
-  if (!channel.requiresDisbursement && !parsed.data.accountId) {
-    return { error: "Pilih akun tujuan — channel ini uangnya diterima langsung" };
-  }
   const today = format(new Date(), "yyyy-MM-dd");
   const orderRef = `POS-${format(new Date(), "yyyyMMdd-HHmmss-SSS")}`;
 
@@ -291,15 +292,13 @@ export async function createPosOrder(formData: FormData) {
 
         firstEntryId = inserted[0].id;
 
-        if (!channel.requiresDisbursement && parsed.data.accountId) {
-          await postDirectSettlementCash(tx, {
-            accountId: parsed.data.accountId,
-            amount: totalNetExpected,
-            txnDate: today,
-            channelName: channel.name,
-            createdBy: actorId,
-          });
-        }
+        await postSaleCash(tx, {
+          accountId: parsed.data.accountId,
+          amount: totalNetExpected,
+          txnDate: today,
+          channelName: channel.name,
+          createdBy: actorId,
+        });
       }
     );
   } catch {
@@ -319,7 +318,7 @@ async function assertNotReconciled(tx: typeof db, ids: string[]) {
     .from(payoutSalesLink)
     .where(inArray(payoutSalesLink.salesEntryId, ids));
   if (linked.length > 0) {
-    throw new Error("Order ini sudah termasuk dalam pencairan dana, tidak bisa dibatalkan");
+    throw new Error("Order ini sudah termasuk dalam pencairan dana lama, tidak bisa dibatalkan");
   }
 }
 
@@ -340,16 +339,15 @@ export async function cancelSalesEntry(id: string) {
 
   revalidatePath("/sales");
   revalidatePath("/sales/new/pos");
-  revalidatePath("/disbursement");
   return { success: true };
 }
 
 /**
  * Distinct from cancelSalesEntry: a retur is a post-delivery return of a
  * legitimately fulfilled order (barang sampai, lalu dikembalikan) — not a
- * pre-fulfillment mistake. Excluded from revenue/stock/profit and
- * disbursement the same way, but tracked separately since it means
- * something different to the business. See CLAUDE.md §6.3.
+ * pre-fulfillment mistake. Excluded from revenue/profit the same way, but
+ * tracked separately since it means something different to the business.
+ * See CLAUDE.md §6.3.
  */
 export async function returnSalesEntry(id: string, formData: FormData) {
   const note = String(formData.get("note") ?? "").trim();
@@ -379,7 +377,6 @@ export async function returnSalesEntry(id: string, formData: FormData) {
   }
 
   revalidatePath("/sales");
-  revalidatePath("/disbursement");
   revalidatePath("/reports");
   return { success: true };
 }
@@ -408,6 +405,5 @@ export async function cancelPosOrder(orderRef: string) {
 
   revalidatePath("/sales");
   revalidatePath("/sales/new/pos");
-  revalidatePath("/disbursement");
   return { success: true };
 }

@@ -3,7 +3,6 @@ import { format } from "date-fns";
 import { db } from "@/db";
 import { products, channels, salesEntries, accounts } from "@/db/schema";
 import { Header } from "@/components/layout/header";
-import { getProductCostBasis } from "@/lib/reports";
 import { PosClient } from "./pos-client";
 
 export const dynamic = "force-dynamic";
@@ -11,16 +10,19 @@ export const dynamic = "force-dynamic";
 export default async function PosPage() {
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const [productList, channelList, accountList, todayRows, costBasis] = await Promise.all([
+  const [productList, channelList, accountList, todayRows] = await Promise.all([
     db
-      .select({ id: products.id, name: products.name, sku: products.sku, basePrice: products.basePrice })
+      .select({
+        id: products.id,
+        name: products.name,
+        sku: products.sku,
+        basePrice: products.basePrice,
+        hppTarget: products.hppTarget,
+      })
       .from(products)
       .where(and(eq(products.isDeleted, false), eq(products.isActive, true)))
       .orderBy(products.name),
-    db
-      .select({ id: channels.id, name: channels.name, requiresDisbursement: channels.requiresDisbursement })
-      .from(channels)
-      .orderBy(channels.name),
+    db.select({ id: channels.id, name: channels.name }).from(channels).orderBy(channels.name),
     db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(eq(accounts.isActive, true)),
     db
       .select({
@@ -41,12 +43,11 @@ export default async function PosPage() {
           eq(salesEntries.isDeleted, false)
         )
       ),
-    getProductCostBasis(),
   ]);
 
   const productsWithCost = productList.map((p) => ({
     ...p,
-    avgCost: costBasis.get(p.id)?.avgCost ?? 0,
+    avgCost: Number(p.hppTarget ?? 0),
   }));
 
   const ordersByRef = new Map<

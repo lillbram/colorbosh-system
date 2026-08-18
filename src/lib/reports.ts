@@ -1,63 +1,7 @@
-import { and, eq, gte, lt, lte } from "drizzle-orm";
+import { and, eq, gte, lte } from "drizzle-orm";
 import { format, startOfMonth, subMonths } from "date-fns";
 import { db } from "@/db";
-import {
-  accounts,
-  cashTransactions,
-  salesEntries,
-  products,
-  channels,
-  tailorPayments,
-  purchaseOrders,
-  purchaseOrderPayments,
-  productionBatches,
-  productionBatchProducts,
-  tailors,
-  categories,
-} from "@/db/schema";
-import { getChannelBalances } from "@/lib/disbursement";
-import { formatIDR } from "@/lib/format";
-
-/**
- * Weighted-average cost per unit and total ever produced, per product,
- * computed from all finished batches. This is the cost basis used for both
- * per-product profit (getPerProductReport) and margin-based Profit Estimasi
- * — a product made across several batches at different costs gets one
- * blended cost rather than pretending each sale can be traced to a specific
- * batch (same "estimate honestly, don't fake precision" approach as the
- * disbursement FIFO aging). See CLAUDE.md §6.2 & §6.6.
- */
-export async function getProductCostBasis(): Promise<
-  Map<string, { avgCost: number; totalProduced: number }>
-> {
-  const rows = await db
-    .select({
-      productId: productionBatchProducts.productId,
-      actualQty: productionBatchProducts.actualQty,
-      hppPerUnit: productionBatches.hppPerUnitCalc,
-    })
-    .from(productionBatchProducts)
-    .innerJoin(productionBatches, eq(productionBatchProducts.batchId, productionBatches.id))
-    .where(and(eq(productionBatches.status, "finished"), eq(productionBatches.isDeleted, false)));
-
-  const totals = new Map<string, { totalQty: number; totalCost: number }>();
-  for (const r of rows) {
-    if (!r.productId || !r.actualQty || !r.hppPerUnit) continue;
-    const existing = totals.get(r.productId) ?? { totalQty: 0, totalCost: 0 };
-    existing.totalQty += r.actualQty;
-    existing.totalCost += r.actualQty * Number(r.hppPerUnit);
-    totals.set(r.productId, existing);
-  }
-
-  const result = new Map<string, { avgCost: number; totalProduced: number }>();
-  for (const [productId, v] of totals) {
-    result.set(productId, {
-      avgCost: v.totalQty > 0 ? v.totalCost / v.totalQty : 0,
-      totalProduced: v.totalQty,
-    });
-  }
-  return result;
-}
+import { accounts, cashTransactions, salesEntries, products, channels, categories } from "@/db/schema";
 
 const CHANNEL_COLORS: Record<string, string> = {
   tiktok_live: "#3B4EA0",
@@ -98,25 +42,15 @@ export async function getPenjualanPeriode(start: string, end: string): Promise<n
   return rows.reduce((sum, r) => sum + Number(r.grossAmount), 0);
 }
 
-export async function getUangBelumCair(): Promise<number> {
-  const balances = await getChannelBalances();
-  return balances.reduce((sum, b) => sum + Math.max(0, b.outstanding), 0);
-}
-
 /**
  * Real margin-based profit: revenue recognized when sold minus that
- * product's actual cost (weighted-average HPP) minus operational expenses —
- * NOT a cash-flow proxy. Previously this just summed cash in/out for the
- * period, which conflates "profit" with "cash movement" (e.g. paying a big
- * kain/jahit bill this month for cardigans sold next month made this
- * month's "profit" look artificially negative). po_payment/tailor_payment
- * cash movements are intentionally excluded here since they're already
- * captured via each product's HPP — only `manual` cash_transactions (true
- * operating expenses: listrik, sewa, gaji, dst.) are subtracted on top of
- * COGS. See CLAUDE.md §6.6.
+ * product's HPP (set manually per product in Pengaturan > Produk) minus
+ * operational expenses — NOT a cash-flow proxy. Previously this just summed
+ * cash in/out for the period, which conflates "profit" with "cash movement".
+ * See CLAUDE.md §6.6.
  */
 export async function getProfitEstimasi(start: string, end: string): Promise<number> {
-  const [salesRows, costBasis, opexRows] = await Promise.all([
+  const [salesRows, productList, opexRows] = await Promise.all([
     db
       .select({
         productId: salesEntries.productId,
@@ -132,7 +66,7 @@ export async function getProfitEstimasi(start: string, end: string): Promise<num
           lte(salesEntries.entryDate, end)
         )
       ),
-    getProductCostBasis(),
+    db.select({ id: products.id, hppTarget: products.hppTarget }).from(products),
     db
       .select({ amount: cashTransactions.amount })
       .from(cashTransactions)
@@ -147,12 +81,14 @@ export async function getProfitEstimasi(start: string, end: string): Promise<num
       ),
   ]);
 
+  const hppById = new Map(productList.map((p) => [p.id, Number(p.hppTarget ?? 0)]));
+
   let revenue = 0;
   let cogs = 0;
   for (const r of salesRows) {
     revenue += Number(r.netExpected);
-    const avgCost = r.productId ? (costBasis.get(r.productId)?.avgCost ?? 0) : 0;
-    cogs += avgCost * r.qty;
+    const hpp = r.productId ? (hppById.get(r.productId) ?? 0) : 0;
+    cogs += hpp * r.qty;
   }
   const opex = opexRows.reduce((sum, r) => sum + Number(r.amount), 0);
 
@@ -304,84 +240,37 @@ export async function getChannelBreakdown(start: string, end: string) {
 
 export type AttentionItem = { label: string; href: string; severity: "warning" | "danger" };
 
+/**
+ * No standing "needs attention" triggers left in this simplified POS flow
+ * (no PO/production/disbursement to go overdue) — kept as a function
+ * returning [] so NotificationBell doesn't need special-casing, and so a
+ * future alert (e.g. negative cash balance) has an obvious place to land.
+ */
 export async function getAttentionItems(): Promise<AttentionItem[]> {
-  const today = format(new Date(), "yyyy-MM-dd");
-
-  const [overduePOs, overdueTermins, balances] = await Promise.all([
-    db
-      .select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber })
-      .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.status, "ordered"), lt(purchaseOrders.expectedDate, today))),
-    db
-      .select({ batchId: tailorPayments.batchId, batchCode: productionBatches.batchCode })
-      .from(tailorPayments)
-      .innerJoin(productionBatches, eq(tailorPayments.batchId, productionBatches.id))
-      .where(and(eq(tailorPayments.status, "due"), lt(tailorPayments.dueDate, today))),
-    getChannelBalances(),
-  ]);
-
-  const items: AttentionItem[] = [];
-
-  for (const po of overduePOs) {
-    items.push({
-      label: `PO ${po.poNumber} melewati estimasi tiba`,
-      href: `/procurement/${po.id}`,
-      severity: "danger",
-    });
-  }
-  for (const t of overdueTermins) {
-    items.push({
-      label: `Termin penjahit ${t.batchCode} sudah jatuh tempo`,
-      href: `/production/${t.batchId}`,
-      severity: "danger",
-    });
-  }
-  for (const b of balances) {
-    if (b.outstanding <= 0.5) continue;
-    items.push({
-      label: `${b.channelName} — ${formatIDR(b.outstanding)} belum cair`,
-      href: `/disbursement/${b.channelId}`,
-      severity: b.oldestUnpaidDays !== null && b.oldestUnpaidDays > 14 ? "danger" : "warning",
-    });
-  }
-
-  return items;
+  return [];
 }
 
-export async function getDashboardHighlights() {
+export async function getTodaySummary() {
   const today = format(new Date(), "yyyy-MM-dd");
+  const rows = await db
+    .select({ grossAmount: salesEntries.grossAmount, channelId: salesEntries.channelId })
+    .from(salesEntries)
+    .where(
+      and(
+        eq(salesEntries.isDeleted, false),
+        eq(salesEntries.isReturned, false),
+        eq(salesEntries.entryDate, today)
+      )
+    );
 
-  const [balances, overdueTermins, overduePOs] = await Promise.all([
-    getChannelBalances(),
-    db
-      .select({ id: tailorPayments.id })
-      .from(tailorPayments)
-      .where(and(eq(tailorPayments.status, "due"), lt(tailorPayments.dueDate, today))),
-    db
-      .select({ id: purchaseOrders.id })
-      .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.status, "ordered"), lt(purchaseOrders.expectedDate, today))),
-  ]);
+  const total = rows.reduce((sum, r) => sum + Number(r.grossAmount), 0);
+  const channelCount = new Set(rows.map((r) => r.channelId).filter(Boolean)).size;
 
-  const topOutstanding = balances
-    .filter((b) => b.outstanding > 0.5)
-    .sort((a, b) => b.outstanding - a.outstanding)[0];
-
-  return {
-    topOutstanding: topOutstanding
-      ? {
-          channelName: topOutstanding.channelName,
-          amount: topOutstanding.outstanding,
-          oldestUnpaidDays: topOutstanding.oldestUnpaidDays,
-        }
-      : null,
-    overdueTerminCount: overdueTermins.length,
-    overduePoCount: overduePOs.length,
-  };
+  return { transactionCount: rows.length, total, channelCount };
 }
 
 export async function getPnLSummary(start: string, end: string) {
-  const [salesRows, channelList, poPaymentRows, tailorPaymentRows, opexRows] = await Promise.all([
+  const [salesRows, channelList, opexRows] = await Promise.all([
     db
       .select({
         channelId: salesEntries.channelId,
@@ -401,20 +290,6 @@ export async function getPnLSummary(start: string, end: string) {
       ),
     db.select({ id: channels.id, name: channels.name }).from(channels),
     db
-      .select({ amount: purchaseOrderPayments.amount })
-      .from(purchaseOrderPayments)
-      .where(and(gte(purchaseOrderPayments.paymentDate, start), lte(purchaseOrderPayments.paymentDate, end))),
-    db
-      .select({ amount: tailorPayments.amount })
-      .from(tailorPayments)
-      .where(
-        and(
-          eq(tailorPayments.status, "paid"),
-          gte(tailorPayments.paidDate, start),
-          lte(tailorPayments.paidDate, end)
-        )
-      ),
-    db
       .select({ amount: cashTransactions.amount, categoryId: cashTransactions.categoryId })
       .from(cashTransactions)
       .where(
@@ -432,11 +307,8 @@ export async function getPnLSummary(start: string, end: string) {
   const totalDiskon = salesRows.reduce((sum, r) => sum + Number(r.discount ?? 0), 0);
   const totalFeePlatform = salesRows.reduce((sum, r) => sum + Number(r.platformFeeEst ?? 0), 0);
   const totalBersih = salesRows.reduce((sum, r) => sum + Number(r.netExpected), 0);
-  const totalBayarSupplier = poPaymentRows.reduce((sum, r) => sum + Number(r.amount), 0);
-  const totalBayarPenjahit = tailorPaymentRows.reduce((sum, r) => sum + Number(r.amount), 0);
   const totalOperasional = opexRows.reduce((sum, r) => sum + Number(r.amount), 0);
-  const totalPengeluaran = totalBayarSupplier + totalBayarPenjahit + totalOperasional;
-  const labaEstimasi = totalBersih - totalPengeluaran;
+  const labaEstimasi = totalBersih - totalOperasional;
 
   const channelNameById = new Map(channelList.map((c) => [c.id, c.name]));
   const byChannel = new Map<string, number>();
@@ -458,10 +330,7 @@ export async function getPnLSummary(start: string, end: string) {
     totalDiskon,
     totalFeePlatform,
     totalBersih,
-    totalBayarSupplier,
-    totalBayarPenjahit,
     totalOperasional,
-    totalPengeluaran,
     labaEstimasi,
   };
 }
@@ -502,7 +371,7 @@ export async function getPerChannelReport(start: string, end: string) {
 }
 
 export async function getPerProductReport(start: string, end: string) {
-  const [periodRows, allTimeSoldRows, costBasis] = await Promise.all([
+  const [periodRows, productList] = await Promise.all([
     db
       .select({
         productId: salesEntries.productId,
@@ -521,18 +390,10 @@ export async function getPerProductReport(start: string, end: string) {
           lte(salesEntries.entryDate, end)
         )
       ),
-    db
-      .select({ productId: salesEntries.productId, qty: salesEntries.qty })
-      .from(salesEntries)
-      .where(and(eq(salesEntries.isDeleted, false), eq(salesEntries.isReturned, false))),
-    getProductCostBasis(),
+    db.select({ id: products.id, hppTarget: products.hppTarget }).from(products),
   ]);
 
-  const totalSoldAllTime = new Map<string, number>();
-  for (const r of allTimeSoldRows) {
-    if (!r.productId) continue;
-    totalSoldAllTime.set(r.productId, (totalSoldAllTime.get(r.productId) ?? 0) + r.qty);
-  }
+  const hppById = new Map(productList.map((p) => [p.id, Number(p.hppTarget ?? 0)]));
 
   const byProduct = new Map<
     string,
@@ -553,18 +414,14 @@ export async function getPerProductReport(start: string, end: string) {
 
   return Array.from(byProduct.values())
     .map((p) => {
-      const basis = costBasis.get(p.productId);
-      const avgCost = basis?.avgCost ?? 0;
-      const totalProduced = basis?.totalProduced ?? 0;
-      const soldAllTime = totalSoldAllTime.get(p.productId) ?? 0;
+      const hpp = hppById.get(p.productId) ?? 0;
       return {
         name: p.name,
         qty: p.qty,
         gross: p.gross,
         bersih: p.bersih,
-        avgCost,
-        stock: totalProduced - soldAllTime,
-        profit: p.bersih - avgCost * p.qty,
+        hpp,
+        profit: p.bersih - hpp * p.qty,
       };
     })
     .sort((a, b) => b.gross - a.gross);
@@ -606,76 +463,4 @@ export async function getCashFlowReport(start: string, end: string) {
       kategori: r.categoryId ? (categoryNameById.get(r.categoryId) ?? "-") : "-",
     }))
     .sort((a, b) => (a.tanggal < b.tanggal ? 1 : -1));
-}
-
-export async function getPerTailorReport(start: string, end: string) {
-  const [tailorList, payments, batches] = await Promise.all([
-    db.select({ id: tailors.id, name: tailors.name }).from(tailors),
-    db.select().from(tailorPayments),
-    db
-      .select({ id: productionBatches.id, tailorId: productionBatches.tailorId, startDate: productionBatches.startDate })
-      .from(productionBatches)
-      .where(
-        and(
-          eq(productionBatches.isDeleted, false),
-          gte(productionBatches.startDate, start),
-          lte(productionBatches.startDate, end)
-        )
-      ),
-  ]);
-
-  const batchToTailor = new Map(batches.map((b) => [b.id, b.tailorId]));
-  const result = new Map(
-    tailorList.map((t) => [t.id, { name: t.name, batchCount: 0, totalDibayar: 0, totalTertunda: 0 }])
-  );
-
-  for (const b of batches) {
-    if (b.tailorId) {
-      const entry = result.get(b.tailorId);
-      if (entry) entry.batchCount += 1;
-    }
-  }
-
-  for (const p of payments) {
-    const tailorId = batchToTailor.get(p.batchId);
-    if (!tailorId) continue;
-    const entry = result.get(tailorId);
-    if (!entry) continue;
-
-    if (p.status === "paid" && p.paidDate && p.paidDate >= start && p.paidDate <= end) {
-      entry.totalDibayar += Number(p.amount);
-    } else if (p.status !== "paid") {
-      entry.totalTertunda += Number(p.amount);
-    }
-  }
-
-  return Array.from(result.values()).filter((t) => t.batchCount > 0 || t.totalTertunda > 0);
-}
-
-export async function getAgingPayoutReport() {
-  const balances = await getChannelBalances();
-
-  return balances
-    .filter((b) => b.outstanding > 0.5)
-    .map((b) => {
-      const daysOverdue = b.oldestUnpaidDays ?? 0;
-      return {
-        channelName: b.channelName,
-        periode: b.oldestUnpaidDate ? `Sejak ${b.oldestUnpaidDate}` : "-",
-        expectedAmount: b.outstanding,
-        expectedPayoutDate: b.oldestUnpaidDate,
-        daysOverdue,
-        bucket:
-          daysOverdue <= 0
-            ? "Belum Jatuh Tempo"
-            : daysOverdue <= 7
-              ? "1-7 Hari"
-              : daysOverdue <= 14
-                ? "8-14 Hari"
-                : daysOverdue <= 30
-                  ? "15-30 Hari"
-                  : "> 30 Hari",
-      };
-    })
-    .sort((a, b) => b.daysOverdue - a.daysOverdue);
 }

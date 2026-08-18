@@ -38,7 +38,7 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
           <NotificationBell />
         </Suspense>
         <Button size="icon" variant="outline" asChild>
-          <a href="/settings/suppliers">
+          <a href="/settings/products">
             <Settings className="size-4" />
           </a>
         </Button>

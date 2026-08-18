@@ -1,4 +1,4 @@
-import { Wallet, ShoppingBag, Clock, TrendingUp, Star } from "lucide-react";
+import { Wallet, ShoppingBag, TrendingUp, Star, Receipt } from "lucide-react";
 import { startOfMonth, endOfMonth, format, subMonths } from "date-fns";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/stats/stat-card";
@@ -9,12 +9,11 @@ import { formatIDR } from "@/lib/format";
 import {
   getSaldoKas,
   getPenjualanPeriode,
-  getUangBelumCair,
   getProfitEstimasi,
   getTopProduk,
   getMonthlyRevenueTrend,
   getChannelBreakdown,
-  getDashboardHighlights,
+  getTodaySummary,
 } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
@@ -30,24 +29,22 @@ export default async function DashboardHomePage() {
     saldoKas,
     penjualanBulanIni,
     penjualanBulanLalu,
-    uangBelumCair,
     profitBulanIni,
     profitBulanLalu,
     topProduk,
     monthlyTrend,
     channelBreakdown,
-    highlights,
+    todaySummary,
   ] = await Promise.all([
     getSaldoKas(),
     getPenjualanPeriode(monthStart, monthEnd),
     getPenjualanPeriode(prevMonthStart, prevMonthEnd),
-    getUangBelumCair(),
     getProfitEstimasi(monthStart, monthEnd),
     getProfitEstimasi(prevMonthStart, prevMonthEnd),
     getTopProduk(monthStart, monthEnd, 3),
     getMonthlyRevenueTrend(7),
     getChannelBreakdown(monthStart, monthEnd),
-    getDashboardHighlights(),
+    getTodaySummary(),
   ]);
 
   const salesTrendPct =
@@ -61,10 +58,10 @@ export default async function DashboardHomePage() {
 
   return (
     <>
-      <Header title="Ringkasan Bisnis" subtitle="Pantau kas, penjualan, dan pencairan dana." />
+      <Header title="Ringkasan Bisnis" subtitle="Pantau kas, penjualan, dan profit." />
 
       <main className="flex-1 space-y-6 p-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard icon={Wallet} label="Saldo Kas" value={saldoKas} isMoney />
           <StatCard
             icon={ShoppingBag}
@@ -76,13 +73,6 @@ export default async function DashboardHomePage() {
               percent: Math.abs(salesTrendPct),
             }}
             footer="vs bulan lalu"
-          />
-          <StatCard
-            icon={Clock}
-            label="Uang Belum Cair"
-            value={uangBelumCair}
-            isMoney
-            trend={{ direction: "none", percent: 0 }}
           />
           <StatCard
             icon={TrendingUp}
@@ -109,49 +99,30 @@ export default async function DashboardHomePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Sorotan</CardTitle>
+              <CardTitle>
+                <Receipt className="size-4 text-primary-500" />
+                Hari Ini
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {highlights.topOutstanding ? (
-                <div className="rounded-lg bg-canvas p-3">
-                  <p className="text-sm font-medium text-ink">
-                    {highlights.topOutstanding.channelName} belum cair
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    {formatIDR(highlights.topOutstanding.amount)} belum diterima
-                    {highlights.topOutstanding.oldestUnpaidDays !== null &&
-                    highlights.topOutstanding.oldestUnpaidDays > 0
-                      ? ` — tertua ${highlights.topOutstanding.oldestUnpaidDays} hari`
-                      : ""}
-                    .
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-lg bg-canvas p-3">
-                  <p className="text-sm font-medium text-ink">Semua channel lunas</p>
-                  <p className="mt-1 text-sm text-muted">
-                    Tidak ada saldo yang masih belum cair saat ini.
-                  </p>
-                </div>
-              )}
-
-              {highlights.overdueTerminCount > 0 && (
-                <div className="rounded-lg bg-warning/10 p-3">
-                  <p className="text-sm font-medium text-warning">Termin Penjahit Jatuh Tempo</p>
-                  <p className="mt-1 text-sm text-muted">
-                    {highlights.overdueTerminCount} pembayaran termin sudah lewat jatuh tempo.
-                  </p>
-                </div>
-              )}
-
-              {highlights.overduePoCount > 0 && (
-                <div className="rounded-lg bg-danger/10 p-3">
-                  <p className="text-sm font-medium text-danger">Pemesanan Kain Perlu Perhatian</p>
-                  <p className="mt-1 text-sm text-muted">
-                    {highlights.overduePoCount} PO melewati estimasi tanggal tiba.
-                  </p>
-                </div>
-              )}
+              <div className="rounded-lg bg-canvas p-3">
+                <p className="text-sm text-muted">Total Transaksi</p>
+                <p className="font-mono-num mt-1 text-xl font-bold text-ink">
+                  {todaySummary.transactionCount}
+                </p>
+              </div>
+              <div className="rounded-lg bg-canvas p-3">
+                <p className="text-sm text-muted">Total Penjualan</p>
+                <p className="font-mono-num mt-1 text-xl font-bold text-ink">
+                  {formatIDR(todaySummary.total)}
+                </p>
+              </div>
+              <div className="rounded-lg bg-canvas p-3">
+                <p className="text-sm text-muted">Channel Aktif</p>
+                <p className="font-mono-num mt-1 text-xl font-bold text-ink">
+                  {todaySummary.channelCount}
+                </p>
+              </div>
             </CardContent>
           </Card>
         </div>

@@ -2,29 +2,24 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { channels, products, accounts } from "@/db/schema";
 import { Header } from "@/components/layout/header";
-import { getProductCostBasis } from "@/lib/reports";
 import { LiveSessionForm } from "./live-session-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewLiveSessionPage() {
-  const [channelList, productList, accountList, costBasis] = await Promise.all([
+  const [channelList, productList, accountList] = await Promise.all([
+    db.select({ id: channels.id, name: channels.name }).from(channels).orderBy(channels.name),
     db
-      .select({ id: channels.id, name: channels.name, requiresDisbursement: channels.requiresDisbursement })
-      .from(channels)
-      .orderBy(channels.name),
-    db
-      .select({ id: products.id, name: products.name, basePrice: products.basePrice })
+      .select({ id: products.id, name: products.name, basePrice: products.basePrice, hppTarget: products.hppTarget })
       .from(products)
       .where(eq(products.isDeleted, false))
       .orderBy(products.name),
     db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(eq(accounts.isActive, true)),
-    getProductCostBasis(),
   ]);
 
   const productsWithCost = productList.map((p) => ({
     ...p,
-    avgCost: costBasis.get(p.id)?.avgCost ?? 0,
+    avgCost: Number(p.hppTarget ?? 0),
   }));
 
   return (

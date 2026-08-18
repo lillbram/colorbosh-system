@@ -24,7 +24,6 @@ import { cn } from "@/lib/utils";
 import { createManualSale } from "../../actions";
 
 type Option = { id: string; name: string };
-type ChannelOption = Option & { requiresDisbursement: boolean | null };
 type ProductOption = Option & { basePrice: string | null; avgCost: number };
 
 export function ManualSaleForm({
@@ -32,7 +31,7 @@ export function ManualSaleForm({
   products,
   accounts,
 }: {
-  channels: ChannelOption[];
+  channels: Option[];
   products: ProductOption[];
   accounts: Option[];
 }) {
@@ -47,8 +46,6 @@ export function ManualSaleForm({
   const [discountValue, setDiscountValue] = useState(0);
   const [isPending, startTransition] = useTransition();
 
-  const selectedChannel = channels.find((c) => c.id === channelId);
-  const needsAccount = selectedChannel ? selectedChannel.requiresDisbursement === false : false;
   const selectedProduct = products.find((p) => p.id === productId);
   const suggestedGross =
     selectedProduct?.basePrice && Number(qty) > 0
@@ -104,27 +101,22 @@ export function ManualSaleForm({
             </div>
           </div>
 
-          {needsAccount && (
-            <div className="space-y-1.5 rounded-lg border border-border/70 bg-canvas/40 p-3">
-              <Label>Akun Tujuan</Label>
-              <p className="text-xs text-muted">
-                Channel ini uangnya diterima langsung — pilih akun kas/bank yang menerima.
-              </p>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih akun" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input type="hidden" name="accountId" value={accountId} />
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <Label>Akun Tujuan</Label>
+            <Select value={accountId} onValueChange={setAccountId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih akun" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input type="hidden" name="accountId" value={accountId} />
+          </div>
 
           <div className="space-y-1.5">
             <Label>Produk</Label>
@@ -215,13 +207,13 @@ export function ManualSaleForm({
               <TrendingUp className="size-4" />
               <span>Estimasi Profit</span>
               <InfoTooltip>
-                Harga Jual (Total Bruto dikurangi Diskon) dikurangi HPP produk ini (rata-rata
-                biaya produksi dari batch yang sudah selesai) × Qty. Belum memperhitungkan fee
-                platform — angka ini untuk gambaran cepat saat input, bukan angka final (lihat
-                Laporan untuk Profit Estimasi yang sudah bersih dari fee).
+                Harga Jual (Total Bruto dikurangi Diskon) dikurangi HPP produk ini (diatur di
+                Pengaturan &gt; Produk) × Qty. Belum memperhitungkan fee platform — angka ini
+                untuk gambaran cepat saat input, bukan angka final (lihat Laporan untuk Profit
+                Estimasi yang sudah bersih dari fee).
               </InfoTooltip>
               {avgCost === 0 && (
-                <span className="text-xs text-warning">(HPP belum ada data produksi)</span>
+                <span className="text-xs text-warning">(HPP belum diatur untuk produk ini)</span>
               )}
             </div>
             <span
@@ -241,7 +233,7 @@ export function ManualSaleForm({
       <div className="flex justify-end">
         <Button
           type="submit"
-          disabled={isPending || !channelId || !productId || (needsAccount && !accountId)}
+          disabled={isPending || !channelId || !productId || !accountId}
         >
           {isPending ? "Menyimpan..." : "Simpan Penjualan"}
         </Button>

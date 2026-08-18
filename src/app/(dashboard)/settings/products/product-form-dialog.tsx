@@ -95,13 +95,16 @@ export function ProductFormDialog({ product }: { product?: Product }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="hppTarget">Target HPP (Rp)</Label>
+              <Label htmlFor="hppTarget">HPP (Rp)</Label>
               <Input
                 id="hppTarget"
                 name="hppTarget"
                 type="number"
                 defaultValue={product?.hppTarget ?? ""}
               />
+              <p className="text-xs text-muted">
+                Biaya produksi per unit — dipakai untuk hitung profit di Penjualan & Laporan.
+              </p>
             </div>
           </div>
 

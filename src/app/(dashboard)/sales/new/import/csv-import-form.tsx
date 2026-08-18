@@ -63,9 +63,11 @@ function normalizeDate(value: string): string {
 export function CsvImportForm({
   channels,
   products,
+  accounts,
 }: {
   channels: Option[];
   products: ProductOption[];
+  accounts: Option[];
 }) {
   const router = useRouter();
   const [fileName, setFileName] = useState<string | null>(null);
@@ -79,6 +81,7 @@ export function CsvImportForm({
     grossAmount: "",
   });
   const [channelId, setChannelId] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -171,6 +174,7 @@ export function CsvImportForm({
 
     const formData = new FormData();
     formData.set("channelId", channelId);
+    formData.set("accountId", accountId);
     formData.set("rowsJson", JSON.stringify(validRows));
 
     startTransition(async () => {
@@ -194,20 +198,37 @@ export function CsvImportForm({
           <CardTitle>1. Pilih Channel & Unggah File</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="max-w-xs space-y-1.5">
-            <Label>Channel</Label>
-            <Select value={channelId} onValueChange={setChannelId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih channel" />
-              </SelectTrigger>
-              <SelectContent>
-                {channels.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Channel</Label>
+              <Select value={channelId} onValueChange={setChannelId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih channel" />
+                </SelectTrigger>
+                <SelectContent>
+                  {channels.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Akun Tujuan</Label>
+              <Select value={accountId} onValueChange={setAccountId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih akun tujuan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <label
@@ -325,7 +346,7 @@ export function CsvImportForm({
 
       <div className="flex items-center justify-end gap-2">
         {headers.length > 0 && <Badge variant="neutral">{validCount} baris siap diimpor</Badge>}
-        <Button onClick={handleImport} disabled={isPending || !channelId || validCount === 0}>
+        <Button onClick={handleImport} disabled={isPending || !channelId || !accountId || validCount === 0}>
           {isPending ? "Mengimpor..." : "Impor Data"}
         </Button>
       </div>
