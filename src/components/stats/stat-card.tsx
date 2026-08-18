@@ -32,7 +32,12 @@ export function StatCard({
         <span>{label}</span>
         {info && <InfoTooltip>{info}</InfoTooltip>}
       </div>
-      <div className="font-mono-num mt-2 text-[28px] font-bold text-ink">
+      <div
+        className={cn(
+          "mt-2 text-xl font-bold leading-tight text-ink",
+          typeof value === "number" ? "font-mono-num whitespace-nowrap" : "break-words"
+        )}
+      >
         {displayValue}
       </div>
       {trend && (
