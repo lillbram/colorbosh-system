@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { db } from "@/db";
 import { products, channels, salesEntries, accounts } from "@/db/schema";
 import { Header } from "@/components/layout/header";
+import { getProductCostBasis } from "@/lib/reports";
 import { PosClient } from "./pos-client";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function PosPage() {
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const [productList, channelList, accountList, todayRows] = await Promise.all([
+  const [productList, channelList, accountList, todayRows, costBasis] = await Promise.all([
     db
       .select({ id: products.id, name: products.name, sku: products.sku, basePrice: products.basePrice })
       .from(products)
@@ -40,7 +41,13 @@ export default async function PosPage() {
           eq(salesEntries.isDeleted, false)
         )
       ),
+    getProductCostBasis(),
   ]);
+
+  const productsWithCost = productList.map((p) => ({
+    ...p,
+    avgCost: costBasis.get(p.id)?.avgCost ?? 0,
+  }));
 
   const ordersByRef = new Map<
     string,
@@ -84,7 +91,7 @@ export default async function PosPage() {
       <Header title="Kasir (POS)" subtitle="Klik produk untuk menambah ke order, lalu simpan." />
       <main className="flex-1 p-6">
         <PosClient
-          products={productList}
+          products={productsWithCost}
           channels={channelList}
           accounts={accountList}
           todayOrders={todayOrders}

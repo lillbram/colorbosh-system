@@ -27,7 +27,7 @@ import { formatIDR } from "@/lib/format";
  * batch (same "estimate honestly, don't fake precision" approach as the
  * disbursement FIFO aging). See CLAUDE.md §6.2 & §6.6.
  */
-async function getProductCostBasis(): Promise<
+export async function getProductCostBasis(): Promise<
   Map<string, { avgCost: number; totalProduced: number }>
 > {
   const rows = await db

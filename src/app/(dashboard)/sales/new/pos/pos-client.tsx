@@ -17,14 +17,16 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { formatIDR } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { createPosOrder, cancelPosOrder } from "../../actions";
 
-type Product = { id: string; name: string; sku: string | null; basePrice: string | null };
+type Product = { id: string; name: string; sku: string | null; basePrice: string | null; avgCost: number };
 type Channel = { id: string; name: string; requiresDisbursement: boolean | null };
 type Account = { id: string; name: string };
-type CartItem = { productId: string; name: string; qty: number; unitPrice: number };
+type CartItem = { productId: string; name: string; qty: number; unitPrice: number; avgCost: number };
 type TodayOrder = {
   orderRef: string;
   channelName: string | null;
@@ -64,6 +66,10 @@ export function PosClient({
   }, [products, search]);
 
   const total = cart.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+  const totalProfit = cart.reduce(
+    (sum, item) => sum + item.qty * (item.unitPrice - item.avgCost),
+    0
+  );
 
   function addToCart(product: Product) {
     setCart((prev) => {
@@ -80,6 +86,7 @@ export function PosClient({
           name: product.name,
           qty: 1,
           unitPrice: Number(product.basePrice ?? 0),
+          avgCost: product.avgCost,
         },
       ];
     });
@@ -264,6 +271,14 @@ export function PosClient({
                         className="h-7 w-24 text-right font-mono-num text-xs"
                       />
                     </div>
+                    <p
+                      className={cn(
+                        "mt-1 text-right font-mono-num text-xs",
+                        item.qty * (item.unitPrice - item.avgCost) < 0 ? "text-danger" : "text-success"
+                      )}
+                    >
+                      Profit: {formatIDR(item.qty * (item.unitPrice - item.avgCost))}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -278,9 +293,29 @@ export function PosClient({
               />
             </div>
 
-            <div className="flex items-center justify-between border-t border-border pt-3">
-              <span className="text-sm text-muted">Total</span>
-              <span className="font-mono-num text-lg font-bold text-ink">{formatIDR(total)}</span>
+            <div className="space-y-1 border-t border-border pt-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1 text-xs text-muted">
+                  Estimasi Profit
+                  <InfoTooltip>
+                    Harga jual dikurangi HPP produk (rata-rata biaya produksi dari batch yang
+                    sudah selesai) untuk tiap item di keranjang. Belum memperhitungkan fee
+                    platform.
+                  </InfoTooltip>
+                </span>
+                <span
+                  className={cn(
+                    "font-mono-num text-sm font-semibold",
+                    totalProfit < 0 ? "text-danger" : "text-success"
+                  )}
+                >
+                  {formatIDR(totalProfit)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted">Total</span>
+                <span className="font-mono-num text-lg font-bold text-ink">{formatIDR(total)}</span>
+              </div>
             </div>
 
             <Button

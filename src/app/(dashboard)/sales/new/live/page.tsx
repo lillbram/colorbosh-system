@@ -2,12 +2,13 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { channels, products, accounts } from "@/db/schema";
 import { Header } from "@/components/layout/header";
+import { getProductCostBasis } from "@/lib/reports";
 import { LiveSessionForm } from "./live-session-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewLiveSessionPage() {
-  const [channelList, productList, accountList] = await Promise.all([
+  const [channelList, productList, accountList, costBasis] = await Promise.all([
     db
       .select({ id: channels.id, name: channels.name, requiresDisbursement: channels.requiresDisbursement })
       .from(channels)
@@ -18,13 +19,19 @@ export default async function NewLiveSessionPage() {
       .where(eq(products.isDeleted, false))
       .orderBy(products.name),
     db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(eq(accounts.isActive, true)),
+    getProductCostBasis(),
   ]);
+
+  const productsWithCost = productList.map((p) => ({
+    ...p,
+    avgCost: costBasis.get(p.id)?.avgCost ?? 0,
+  }));
 
   return (
     <>
       <Header title="Rekap Live" subtitle="Input massal penjualan dari satu sesi TikTok Live." />
       <main className="flex-1 p-6">
-        <LiveSessionForm channels={channelList} products={productList} accounts={accountList} />
+        <LiveSessionForm channels={channelList} products={productsWithCost} accounts={accountList} />
       </main>
     </>
   );

@@ -27,10 +27,12 @@ export function LiveEntriesTable({
   name,
   products,
   onTotalChange,
+  onProfitChange,
 }: {
   name: string;
-  products: { id: string; name: string; basePrice: string | null }[];
+  products: { id: string; name: string; basePrice: string | null; avgCost?: number }[];
   onTotalChange?: (total: number) => void;
+  onProfitChange?: (profit: number) => void;
 }) {
   const [rows, setRows] = useState<Row[]>(() => {
     if (typeof window === "undefined") return [EMPTY_ROW];
@@ -57,7 +59,14 @@ export function LiveEntriesTable({
       0
     );
     onTotalChange?.(total);
-  }, [rows, onTotalChange]);
+
+    const profit = rows.reduce((sum, r) => {
+      const avgCost = products.find((p) => p.id === r.productId)?.avgCost ?? 0;
+      return sum + (Number(r.qty) || 0) * ((Number(r.unitPrice) || 0) - avgCost);
+    }, 0);
+    onProfitChange?.(profit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, onTotalChange, onProfitChange]);
 
   function updateRow(index: number, patch: Partial<Row>) {
     setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
@@ -89,6 +98,9 @@ export function LiveEntriesTable({
               <th className="w-36 px-3 py-2 text-right text-xs font-medium uppercase text-muted">
                 Subtotal
               </th>
+              <th className="w-32 px-3 py-2 text-right text-xs font-medium uppercase text-muted">
+                Profit
+              </th>
               <th className="w-10" />
             </tr>
           </thead>
@@ -96,6 +108,8 @@ export function LiveEntriesTable({
             {rows.map((row, index) => {
               const subtotal = (Number(row.qty) || 0) * (Number(row.unitPrice) || 0);
               const complete = isComplete(row);
+              const avgCost = products.find((p) => p.id === row.productId)?.avgCost ?? 0;
+              const rowProfit = (Number(row.qty) || 0) * ((Number(row.unitPrice) || 0) - avgCost);
 
               return (
                 <tr
@@ -147,6 +161,14 @@ export function LiveEntriesTable({
                     />
                   </td>
                   <td className="p-1.5 text-right font-mono-num">{formatIDR(subtotal)}</td>
+                  <td
+                    className={cn(
+                      "p-1.5 text-right font-mono-num text-xs",
+                      row.productId && (rowProfit < 0 ? "text-danger" : "text-success")
+                    )}
+                  >
+                    {row.productId ? formatIDR(rowProfit) : "-"}
+                  </td>
                   <td className="p-1.5 text-center">
                     <Button type="button" size="icon" variant="ghost" onClick={() => removeRow(index)}>
                       <Trash2 className="size-4 text-danger" />

@@ -16,12 +16,14 @@ import {
 import { DateInput } from "@/components/forms/date-input";
 import { LiveEntriesTable } from "@/components/forms/live-entries-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatIDR } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { createLiveSession } from "../../actions";
 
 type Option = { id: string; name: string };
 type ChannelOption = Option & { requiresDisbursement: boolean | null };
-type ProductOption = Option & { basePrice: string | null };
+type ProductOption = Option & { basePrice: string | null; avgCost: number };
 
 export function LiveSessionForm({
   channels,
@@ -36,6 +38,7 @@ export function LiveSessionForm({
   const [channelId, setChannelId] = useState("");
   const [accountId, setAccountId] = useState("");
   const [total, setTotal] = useState(0);
+  const [profit, setProfit] = useState(0);
   const [isPending, startTransition] = useTransition();
 
   const selectedChannel = channels.find((c) => c.id === channelId);
@@ -117,8 +120,29 @@ export function LiveSessionForm({
           <CardTitle>Produk Terjual</CardTitle>
         </CardHeader>
         <CardContent>
-          <LiveEntriesTable name="entriesJson" products={products} onTotalChange={setTotal} />
-          <div className="mt-3 flex justify-end text-sm">
+          <LiveEntriesTable
+            name="entriesJson"
+            products={products}
+            onTotalChange={setTotal}
+            onProfitChange={setProfit}
+          />
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-4 text-sm">
+            <span className="inline-flex items-center gap-1 text-muted">
+              Estimasi Profit
+              <InfoTooltip>
+                Harga jual dikurangi HPP produk (rata-rata biaya produksi dari batch yang sudah
+                selesai) untuk tiap baris, dijumlahkan. Belum memperhitungkan fee platform.
+              </InfoTooltip>
+              :{" "}
+              <span
+                className={cn(
+                  "font-mono-num text-base font-semibold",
+                  profit < 0 ? "text-danger" : "text-success"
+                )}
+              >
+                {formatIDR(profit)}
+              </span>
+            </span>
             <span className="text-muted">
               Total Bruto:{" "}
               <span className="font-mono-num text-base font-semibold text-ink">
