@@ -8,6 +8,7 @@ import { Header } from "@/components/layout/header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatDate, formatIDR } from "@/lib/format";
 import { ConfirmPayoutDialog } from "./confirm-payout-dialog";
 
@@ -36,7 +37,13 @@ export default async function DisbursementPage() {
       />
 
       <main className="flex-1 space-y-4 p-6">
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <InfoTooltip>
+            Total Terjual & Dana Diterima di sini dihitung sepanjang waktu (semua tanggal), bukan
+            dibatasi periode filter seperti di halaman Penjualan atau Laporan — supaya cocok,
+            bandingkan dengan Laporan Lengkap periode &ldquo;12 Bulan Terakhir&rdquo; atau lebih
+            panjang, atau lihat rincian per transaksi di kartu channel masing-masing.
+          </InfoTooltip>
           <ConfirmPayoutDialog channels={channelList} accounts={accountList} />
         </div>
 
@@ -72,11 +79,19 @@ export default async function DisbursementPage() {
                           {formatIDR(b.outstanding)}
                         </p>
                         <p className="mt-1 text-xs text-muted">Belum cair</p>
-                        <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-2">
-                          <span className="text-xs text-muted">Dana Diterima</span>
-                          <span className="font-mono-num text-sm font-semibold text-success">
-                            {formatIDR(b.totalReceived)}
-                          </span>
+                        <div className="mt-3 space-y-1.5 border-t border-border/70 pt-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted">Total Terjual</span>
+                            <span className="font-mono-num text-sm font-semibold text-ink">
+                              {formatIDR(b.totalSold)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted">Dana Diterima</span>
+                            <span className="font-mono-num text-sm font-semibold text-success">
+                              {formatIDR(b.totalReceived)}
+                            </span>
+                          </div>
                         </div>
                         {b.oldestUnpaidDate && (
                           <p className="mt-2 text-xs text-muted">
@@ -99,7 +114,9 @@ export default async function DisbursementPage() {
                 <div className="flex flex-wrap gap-2">
                   {settled.map((b) => (
                     <Link key={b.channelId} href={`/disbursement/${b.channelId}`}>
-                      <Badge variant="success">{b.channelName}</Badge>
+                      <Badge variant="success">
+                        {b.channelName} — {formatIDR(b.totalSold)} terjual
+                      </Badge>
                     </Link>
                   ))}
                 </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 import { ShoppingBag, Radio, Upload, PencilLine, ShoppingCart } from "lucide-react";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
+import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatDate, formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cancelSalesEntry } from "./actions";
@@ -39,36 +41,74 @@ const TABS = [
 export default async function SalesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; channel?: string }>;
 }) {
-  const { status = "aktif" } = await searchParams;
+  const { status = "aktif", channel: channelFilter } = await searchParams;
   const activeTab = status === "dibatalkan" || status === "retur" ? status : "aktif";
 
-  const whereClause =
+  const statusClause =
     activeTab === "dibatalkan"
       ? eq(salesEntries.isDeleted, true)
       : activeTab === "retur"
         ? eq(salesEntries.isReturned, true)
         : and(eq(salesEntries.isDeleted, false), eq(salesEntries.isReturned, false));
+  const whereClause = channelFilter
+    ? and(statusClause, eq(salesEntries.channelId, channelFilter))
+    : statusClause;
 
-  const rows = await db
-    .select({
-      id: salesEntries.id,
-      entryDate: salesEntries.entryDate,
-      qty: salesEntries.qty,
-      grossAmount: salesEntries.grossAmount,
-      netExpected: salesEntries.netExpected,
-      source: salesEntries.source,
-      returnNote: salesEntries.returnNote,
-      channelName: channels.name,
-      productName: products.name,
-    })
-    .from(salesEntries)
-    .leftJoin(channels, eq(salesEntries.channelId, channels.id))
-    .leftJoin(products, eq(salesEntries.productId, products.id))
-    .where(whereClause)
-    .orderBy(desc(salesEntries.entryDate))
-    .limit(200);
+  const [rows, channelList] = await Promise.all([
+    db
+      .select({
+        id: salesEntries.id,
+        entryDate: salesEntries.entryDate,
+        qty: salesEntries.qty,
+        grossAmount: salesEntries.grossAmount,
+        netExpected: salesEntries.netExpected,
+        source: salesEntries.source,
+        returnNote: salesEntries.returnNote,
+        channelId: salesEntries.channelId,
+        channelName: channels.name,
+        productName: products.name,
+      })
+      .from(salesEntries)
+      .leftJoin(channels, eq(salesEntries.channelId, channels.id))
+      .leftJoin(products, eq(salesEntries.productId, products.id))
+      .where(whereClause)
+      .orderBy(desc(salesEntries.entryDate)),
+    db.select({ id: channels.id, name: channels.name }).from(channels).orderBy(channels.name),
+  ]);
+
+  // Group by channel so totals here can be matched against the same
+  // channel groupings in Pencairan Dana and Laporan Lengkap → Per Channel.
+  const groups = new Map<
+    string,
+    { channelId: string | null; channelName: string; rows: typeof rows; gross: number; bersih: number }
+  >();
+  for (const r of rows) {
+    const key = r.channelId ?? "none";
+    const g = groups.get(key) ?? {
+      channelId: r.channelId,
+      channelName: r.channelName ?? "Tanpa Channel",
+      rows: [],
+      gross: 0,
+      bersih: 0,
+    };
+    g.rows.push(r);
+    g.gross += Number(r.grossAmount);
+    g.bersih += Number(r.netExpected);
+    groups.set(key, g);
+  }
+  const groupedRows = Array.from(groups.values()).sort((a, b) => b.gross - a.gross);
+
+  function buildUrl(overrides: { status?: string; channel?: string }) {
+    const params = new URLSearchParams();
+    const nextStatus = overrides.status ?? activeTab;
+    const nextChannel = "channel" in overrides ? overrides.channel : channelFilter;
+    if (nextStatus !== "aktif") params.set("status", nextStatus);
+    if (nextChannel) params.set("channel", nextChannel);
+    const qs = params.toString();
+    return qs ? `/sales?${qs}` : "/sales";
+  }
 
   return (
     <>
@@ -125,19 +165,55 @@ export default async function SalesPage({
           </Link>
         </div>
 
-        <div className="inline-flex items-center gap-1 rounded-lg bg-black/5 p-1">
-          {TABS.map((t) => (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-1 rounded-lg bg-black/5 p-1">
+            {TABS.map((t) => (
+              <Link
+                key={t.value}
+                href={buildUrl({ status: t.value })}
+                className={cn(
+                  "rounded-md px-4 py-1.5 text-sm font-medium",
+                  activeTab === t.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+                )}
+              >
+                {t.label}
+              </Link>
+            ))}
+          </div>
+          <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-black/5 p-1">
             <Link
-              key={t.value}
-              href={t.value === "aktif" ? "/sales" : `/sales?status=${t.value}`}
+              href={buildUrl({ channel: undefined })}
               className={cn(
-                "rounded-md px-4 py-1.5 text-sm font-medium",
-                activeTab === t.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+                "rounded-md px-3 py-1.5 text-sm font-medium",
+                !channelFilter ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
               )}
             >
-              {t.label}
+              Semua Channel
             </Link>
-          ))}
+            {channelList.map((c) => (
+              <Link
+                key={c.id}
+                href={buildUrl({ channel: c.id })}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm font-medium",
+                  channelFilter === c.id ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+                )}
+              >
+                {c.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
+          <span>Dikelompokkan per channel supaya mudah dicocokkan dengan Pencairan Dana & Laporan.</span>
+          <InfoTooltip>
+            Tiap channel di sini menjumlahkan SEMUA transaksi pada tab & filter aktif saat ini
+            (tidak dibatasi periode tanggal) — beda dengan Laporan Lengkap yang dibatasi periode
+            filter di sana, dan beda dengan Pencairan Dana yang memakai Bersih (Total Terjual)
+            bukan Bruto. Untuk mencocokkan persis, bandingkan Bersih di sini dengan kolom Bersih
+            di Laporan Lengkap → Per Channel pada periode yang sama.
+          </InfoTooltip>
         </div>
 
         <Card>
@@ -166,7 +242,6 @@ export default async function SalesPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Tanggal</TableHead>
-                  <TableHead>Channel</TableHead>
                   <TableHead>Produk</TableHead>
                   <TableHead>Qty</TableHead>
                   <TableHead>Bruto</TableHead>
@@ -177,48 +252,70 @@ export default async function SalesPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>{formatDate(r.entryDate)}</TableCell>
-                    <TableCell>{r.channelName ?? "-"}</TableCell>
-                    <TableCell>
-                      <Link href={`/sales/${r.id}`} className="font-medium text-primary-600 hover:underline">
-                        {r.productName ?? "-"}
-                      </Link>
-                      {activeTab === "retur" && r.returnNote && (
-                        <p className="mt-0.5 text-xs text-muted">{r.returnNote}</p>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono-num">{r.qty}</TableCell>
-                    <TableCell className="font-mono-num">{formatIDR(Number(r.grossAmount))}</TableCell>
-                    <TableCell className="font-mono-num">
-                      {formatIDR(Number(r.netExpected))}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="neutral">{SOURCE_LABEL[r.source ?? "manual"]}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          activeTab === "dibatalkan" ? "danger" : activeTab === "retur" ? "warning" : "success"
-                        }
+                {groupedRows.map((g) => (
+                  <Fragment key={g.channelId ?? "none"}>
+                    <TableRow className="bg-black/[0.03] hover:bg-black/[0.03]">
+                      <TableCell
+                        colSpan={activeTab === "aktif" ? 8 : 7}
+                        className="py-2 text-sm font-semibold text-ink"
                       >
-                        {activeTab === "dibatalkan" ? "Dibatalkan" : activeTab === "retur" ? "Retur" : "Aktif"}
-                      </Badge>
-                    </TableCell>
-                    {activeTab === "aktif" && (
-                      <TableCell>
-                        <div className="flex justify-end gap-1">
-                          <ReturnSalesEntryDialog entryId={r.id} size="icon" />
-                          <ConfirmCancelButton
-                            itemName="penjualan ini"
-                            size="icon"
-                            onConfirm={cancelSalesEntry.bind(null, r.id)}
-                          />
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                          <span>{g.channelName}</span>
+                          <span className="text-xs font-normal text-muted">
+                            {g.rows.length} transaksi
+                          </span>
+                          <span className="font-mono-num text-xs font-normal text-muted">
+                            Bruto {formatIDR(g.gross)}
+                          </span>
+                          <span className="font-mono-num text-xs font-normal text-muted">
+                            Bersih {formatIDR(g.bersih)}
+                          </span>
                         </div>
                       </TableCell>
-                    )}
-                  </TableRow>
+                    </TableRow>
+                    {g.rows.map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell>{formatDate(r.entryDate)}</TableCell>
+                        <TableCell>
+                          <Link href={`/sales/${r.id}`} className="font-medium text-primary-600 hover:underline">
+                            {r.productName ?? "-"}
+                          </Link>
+                          {activeTab === "retur" && r.returnNote && (
+                            <p className="mt-0.5 text-xs text-muted">{r.returnNote}</p>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-mono-num">{r.qty}</TableCell>
+                        <TableCell className="font-mono-num">{formatIDR(Number(r.grossAmount))}</TableCell>
+                        <TableCell className="font-mono-num">
+                          {formatIDR(Number(r.netExpected))}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="neutral">{SOURCE_LABEL[r.source ?? "manual"]}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              activeTab === "dibatalkan" ? "danger" : activeTab === "retur" ? "warning" : "success"
+                            }
+                          >
+                            {activeTab === "dibatalkan" ? "Dibatalkan" : activeTab === "retur" ? "Retur" : "Aktif"}
+                          </Badge>
+                        </TableCell>
+                        {activeTab === "aktif" && (
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              <ReturnSalesEntryDialog entryId={r.id} size="icon" />
+                              <ConfirmCancelButton
+                                itemName="penjualan ini"
+                                size="icon"
+                                onConfirm={cancelSalesEntry.bind(null, r.id)}
+                              />
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>

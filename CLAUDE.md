@@ -685,6 +685,8 @@ Aktifkan RLS di semua tabel. Kebijakan default:
 - Channel ini **tidak pernah muncul** di halaman Pencairan Dana sama sekali (lihat §6.4) — tidak ada gunanya menunggu payout yang memang tidak akan pernah datang.
 - Impor CSV **tidak** mendapat perlakuan ini (diasumsikan selalu untuk export platform TikTok/Shopee, bukan channel pencairan langsung) — kalau dipakai untuk channel jenis ini, order tetap tersimpan tapi tanpa auto cash-posting.
 
+**Grouping per channel di `/sales`:** daftar transaksi (semua tab: Aktif/Retur/Dibatalkan, tanpa batas 200 baris seperti sebelumnya) dikelompokkan per channel dengan baris header abu-abu berisi jumlah transaksi + subtotal Bruto/Bersih, diurutkan dari Bruto terbesar. Filter pill channel (`?channel=`) di kanan filter status memperjelas satu channel saja. Tujuannya supaya angka di sini gampang dicocokkan dengan Pencairan Dana (§6.4) dan Laporan Lengkap → Per Channel — meski perlu diingat totalnya tetap beda basis (di sini sepanjang tab aktif tanpa filter tanggal, bukan periode filter Laporan, dan bukan basis all-time seperti Pencairan Dana), dijelaskan lewat `InfoTooltip` di halaman.
+
 **Detail per order** (`/sales/[id]`): setiap baris di `/sales` bisa diklik (nama produk jadi link) untuk membuka halaman detail — menampilkan channel, produk, qty, harga satuan, rincian Total Bruto/Diskon/Fee Platform (nominal + % yang benar-benar diterapkan saat order dibuat)/Total Bersih, sumber input, no. order, catatan pembeli, siapa & kapan dicatat, serta tombol Batalkan/Retur (kalau masih aktif).
 
 **Membatalkan order (semua mode):**
@@ -714,7 +716,7 @@ Setiap channel punya satu angka: `Belum Cair = Total Terjual (aktif, sepanjang w
 - Selalu dilabeli sebagai estimasi di UI (bagian "Penjualan Belum Cair (estimasi FIFO)" di halaman detail channel) — tidak pernah diklaim sebagai fakta pencocokan.
 
 **Halaman `/disbursement`:**
-- Daftar card per channel yang masih `Belum Cair` (outstanding > 0), diurutkan dari saldo terbesar. Section terpisah `Lunas` untuk channel dengan saldo 0.
+- Daftar card per channel yang masih `Belum Cair` (outstanding > 0), diurutkan dari saldo terbesar. Section terpisah `Lunas` untuk channel dengan saldo 0. Tiap card (dan badge di section Lunas) menampilkan **Total Terjual** (all-time, basis `net_expected`) di samping Belum Cair/Dana Diterima — dipakai untuk dicocokkan dengan kolom Bersih per-channel di `/sales` (lihat §6.3) dan Laporan Lengkap → Per Channel.
 - **Channel dengan `requires_disbursement = false`** (mis. "Paket Usaha") **tidak pernah muncul di halaman ini sama sekali** — `getChannelBalances()` memfilternya di query paling awal, bukan sekadar disembunyikan di UI. Uangnya sudah tercatat langsung sebagai `cash_transactions` saat order dibuat (lihat §6.3), jadi tidak ada "Belum Cair" yang perlu ditunggu.
 - Tidak ada lagi tombol "Buat Proyeksi Pencairan" — tidak ada yang perlu di-generate, angkanya selalu live.
 - Tombol "+ Payout Diterima" tinggal: channel, tanggal, jumlah, akun tujuan, no. referensi, catatan. Tidak ada lagi langkah "cocokkan dengan proyeksi" — payout langsung mengurangi saldo channel tsb.
