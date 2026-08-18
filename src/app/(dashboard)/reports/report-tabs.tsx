@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import * as XLSX from "xlsx";
-import { FileDown } from "lucide-react";
+import { FileDown, ChevronDown, ChevronRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -42,6 +43,43 @@ function ExportButton({ filename, rows }: { filename: string; rows: Record<strin
   );
 }
 
+function TotalPenjualanRow({ pnl }: { pnl: PnL }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <TableRow className="cursor-pointer" onClick={() => setOpen((v) => !v)}>
+        <TableCell>
+          <span className="inline-flex items-center gap-1.5">
+            {open ? (
+              <ChevronDown className="size-3.5 text-muted" />
+            ) : (
+              <ChevronRight className="size-3.5 text-muted" />
+            )}
+            Total Penjualan
+            <span className="text-xs text-muted">
+              ({pnl.penjualanPerChannel.length} channel — klik untuk rincian)
+            </span>
+          </span>
+        </TableCell>
+        <TableCell className="text-right font-mono-num">{formatIDR(pnl.totalPenjualan)}</TableCell>
+      </TableRow>
+      {open &&
+        pnl.penjualanPerChannel.map((c) => (
+          <TableRow key={c.name} className="bg-black/[0.02]">
+            <TableCell className="pl-9 text-sm text-muted">
+              {c.name}
+              <span className="ml-1.5 text-xs">({c.pct.toFixed(0)}%)</span>
+            </TableCell>
+            <TableCell className="text-right font-mono-num text-sm text-muted">
+              {formatIDR(c.gross)}
+            </TableCell>
+          </TableRow>
+        ))}
+    </>
+  );
+}
+
 export function ReportTabs({
   pnl,
   perChannel,
@@ -77,12 +115,17 @@ export function ReportTabs({
               Pemesanan Kain; Bayar Penjahit dari termin yang sudah lunas; Operasional dari
               transaksi kas manual (bukan otomatis). Laba Estimasi = Penjualan Bersih dikurangi
               ketiga pengeluaran itu — ini beda dari Profit Estimasi di Laporan Sederhana yang
-              memakai HPP produk, bukan pembayaran kain/penjahit langsung.
+              memakai HPP produk, bukan pembayaran kain/penjahit langsung. Klik baris &ldquo;Total
+              Penjualan&rdquo; untuk lihat rincian per channel.
             </InfoTooltip>
             <ExportButton
               filename="laba-rugi"
               rows={[
                 { Item: "Total Penjualan", Nominal: pnl.totalPenjualan },
+                ...pnl.penjualanPerChannel.map((c) => ({
+                  Item: `  - ${c.name}`,
+                  Nominal: c.gross,
+                })),
                 { Item: "Diskon", Nominal: -pnl.totalDiskon },
                 { Item: "Fee Platform Estimasi", Nominal: -pnl.totalFeePlatform },
                 { Item: "Penjualan Bersih", Nominal: pnl.totalBersih },
@@ -95,10 +138,7 @@ export function ReportTabs({
           </div>
           <Table>
             <TableBody>
-              <TableRow>
-                <TableCell>Total Penjualan</TableCell>
-                <TableCell className="text-right font-mono-num">{formatIDR(pnl.totalPenjualan)}</TableCell>
-              </TableRow>
+              <TotalPenjualanRow pnl={pnl} />
               <TableRow>
                 <TableCell className="text-muted">Diskon</TableCell>
                 <TableCell className="text-right font-mono-num text-danger">

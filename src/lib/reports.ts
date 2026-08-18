@@ -381,9 +381,10 @@ export async function getDashboardHighlights() {
 }
 
 export async function getPnLSummary(start: string, end: string) {
-  const [salesRows, poPaymentRows, tailorPaymentRows, opexRows] = await Promise.all([
+  const [salesRows, channelList, poPaymentRows, tailorPaymentRows, opexRows] = await Promise.all([
     db
       .select({
+        channelId: salesEntries.channelId,
         grossAmount: salesEntries.grossAmount,
         discount: salesEntries.discount,
         platformFeeEst: salesEntries.platformFeeEst,
@@ -398,6 +399,7 @@ export async function getPnLSummary(start: string, end: string) {
           lte(salesEntries.entryDate, end)
         )
       ),
+    db.select({ id: channels.id, name: channels.name }).from(channels),
     db
       .select({ amount: purchaseOrderPayments.amount })
       .from(purchaseOrderPayments)
@@ -436,8 +438,23 @@ export async function getPnLSummary(start: string, end: string) {
   const totalPengeluaran = totalBayarSupplier + totalBayarPenjahit + totalOperasional;
   const labaEstimasi = totalBersih - totalPengeluaran;
 
+  const channelNameById = new Map(channelList.map((c) => [c.id, c.name]));
+  const byChannel = new Map<string, number>();
+  for (const r of salesRows) {
+    const name = (r.channelId ? channelNameById.get(r.channelId) : null) ?? "Tanpa Channel";
+    byChannel.set(name, (byChannel.get(name) ?? 0) + Number(r.grossAmount));
+  }
+  const penjualanPerChannel = Array.from(byChannel.entries())
+    .map(([name, gross]) => ({
+      name,
+      gross,
+      pct: totalPenjualan > 0 ? (gross / totalPenjualan) * 100 : 0,
+    }))
+    .sort((a, b) => b.gross - a.gross);
+
   return {
     totalPenjualan,
+    penjualanPerChannel,
     totalDiskon,
     totalFeePlatform,
     totalBersih,
