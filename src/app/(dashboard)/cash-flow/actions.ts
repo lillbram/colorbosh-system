@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
 import { cashTransactions } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
 import { withAudit } from "@/lib/audit";
@@ -37,6 +38,73 @@ export async function createManualCashTransaction(formData: FormData) {
     );
   } catch {
     return { error: "Gagal menyimpan transaksi" };
+  }
+
+  revalidatePath("/cash-flow");
+  return { success: true };
+}
+
+export async function editManualCashTransaction(id: string, formData: FormData) {
+  const parsed = cashTransactionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
+  }
+
+  const actorId = await getCurrentUserId();
+
+  try {
+    await withAudit(
+      { entityType: "cash_transaction", entityId: id, action: "update", actorId },
+      async (tx) => {
+        const [existing] = await tx
+          .select({ relatedType: cashTransactions.relatedType, isDeleted: cashTransactions.isDeleted })
+          .from(cashTransactions)
+          .where(eq(cashTransactions.id, id));
+        if (!existing || existing.isDeleted) throw new Error("Transaksi tidak ditemukan");
+        if (existing.relatedType !== "manual") {
+          throw new Error("Transaksi otomatis tidak bisa diedit di sini");
+        }
+        await tx
+          .update(cashTransactions)
+          .set({
+            txnDate: parsed.data.txnDate,
+            accountId: parsed.data.accountId,
+            direction: parsed.data.direction,
+            amount: String(parsed.data.amount),
+            categoryId: parsed.data.categoryId || null,
+            description: parsed.data.description,
+          })
+          .where(eq(cashTransactions.id, id));
+      }
+    );
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Gagal mengubah transaksi" };
+  }
+
+  revalidatePath("/cash-flow");
+  return { success: true };
+}
+
+export async function deleteManualCashTransaction(id: string) {
+  const actorId = await getCurrentUserId();
+
+  try {
+    await withAudit(
+      { entityType: "cash_transaction", entityId: id, action: "delete", actorId },
+      async (tx) => {
+        const [existing] = await tx
+          .select({ relatedType: cashTransactions.relatedType, isDeleted: cashTransactions.isDeleted })
+          .from(cashTransactions)
+          .where(eq(cashTransactions.id, id));
+        if (!existing || existing.isDeleted) throw new Error("Transaksi tidak ditemukan");
+        if (existing.relatedType !== "manual") {
+          throw new Error("Transaksi otomatis tidak bisa dihapus di sini");
+        }
+        await tx.update(cashTransactions).set({ isDeleted: true }).where(eq(cashTransactions.id, id));
+      }
+    );
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Gagal menghapus transaksi" };
   }
 
   revalidatePath("/cash-flow");

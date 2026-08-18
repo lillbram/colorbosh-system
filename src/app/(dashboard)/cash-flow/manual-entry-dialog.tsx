@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -23,22 +23,36 @@ import {
 } from "@/components/ui/dialog";
 import { DateInput } from "@/components/forms/date-input";
 import { MoneyInput } from "@/components/forms/money-input";
-import { createManualCashTransaction } from "./actions";
+import { createManualCashTransaction, editManualCashTransaction } from "./actions";
 
 type Option = { id: string; name: string };
+
+type ExistingEntry = {
+  id: string;
+  txnDate: string;
+  accountId: string | null;
+  categoryId: string | null;
+  direction: "in" | "out";
+  amount: number;
+  description: string | null;
+};
 
 export function ManualEntryDialog({
   accounts,
   categories,
+  entry,
 }: {
   accounts: Option[];
   categories: (Option & { kind: "income" | "expense" })[];
+  /** Pass an existing entry to render this as an edit dialog instead of a create dialog. */
+  entry?: ExistingEntry;
 }) {
+  const isEdit = !!entry;
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [direction, setDirection] = useState<"in" | "out">("out");
-  const [accountId, setAccountId] = useState("");
-  const [categoryId, setCategoryId] = useState("");
+  const [direction, setDirection] = useState<"in" | "out">(entry?.direction ?? "out");
+  const [accountId, setAccountId] = useState(entry?.accountId ?? "");
+  const [categoryId, setCategoryId] = useState(entry?.categoryId ?? "");
   const [isPending, startTransition] = useTransition();
 
   const filteredCategories = categories.filter(
@@ -48,25 +62,33 @@ export function ManualEntryDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="accent" size="sm">
-          <Plus className="size-4" />
-          Catat Transaksi
-        </Button>
+        {isEdit ? (
+          <Button size="icon" variant="ghost">
+            <Pencil className="size-4" />
+          </Button>
+        ) : (
+          <Button variant="accent" size="sm">
+            <Plus className="size-4" />
+            Catat Transaksi
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Transaksi Kas Manual</DialogTitle>
+          <DialogTitle>{isEdit ? "Ubah Transaksi Kas" : "Transaksi Kas Manual"}</DialogTitle>
         </DialogHeader>
 
         <form
           action={(formData) => {
             setError(null);
             startTransition(async () => {
-              const result = await createManualCashTransaction(formData);
+              const result = isEdit
+                ? await editManualCashTransaction(entry.id, formData)
+                : await createManualCashTransaction(formData);
               if (result?.error) {
                 setError(result.error);
               } else {
-                toast.success("Transaksi dicatat");
+                toast.success(isEdit ? "Transaksi diubah" : "Transaksi dicatat");
                 setOpen(false);
               }
             });
@@ -99,8 +121,12 @@ export function ManualEntryDialog({
             <input type="hidden" name="direction" value={direction} />
           </div>
 
-          <MoneyInput name="amount" label="Nominal" required />
-          <DateInput name="txnDate" label="Tanggal" defaultValue={new Date().toISOString().slice(0, 10)} />
+          <MoneyInput name="amount" label="Nominal" required defaultValue={entry?.amount} />
+          <DateInput
+            name="txnDate"
+            label="Tanggal"
+            defaultValue={entry?.txnDate ?? new Date().toISOString().slice(0, 10)}
+          />
 
           <div className="space-y-1.5">
             <Label>Akun</Label>
@@ -138,7 +164,13 @@ export function ManualEntryDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="description">Keterangan</Label>
-            <Input id="description" name="description" required placeholder="mis. Bayar listrik toko" />
+            <Input
+              id="description"
+              name="description"
+              required
+              placeholder="mis. Bayar listrik toko"
+              defaultValue={entry?.description ?? ""}
+            />
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}

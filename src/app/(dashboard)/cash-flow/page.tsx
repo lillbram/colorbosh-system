@@ -15,9 +15,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ConfirmDeleteButton } from "@/components/shared/confirm-delete-button";
 import { formatDate, formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ManualEntryDialog } from "./manual-entry-dialog";
+import { deleteManualCashTransaction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +42,7 @@ export default async function CashFlowPage({
         description: cashTransactions.description,
         relatedType: cashTransactions.relatedType,
         accountId: cashTransactions.accountId,
+        categoryId: cashTransactions.categoryId,
         accountName: accounts.name,
         categoryName: categories.name,
       })
@@ -132,6 +135,7 @@ export default async function CashFlowPage({
                   <TableHead>Keterangan</TableHead>
                   <TableHead>Kategori</TableHead>
                   <TableHead className="text-right">Nominal</TableHead>
+                  <TableHead className="w-24 text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -156,6 +160,29 @@ export default async function CashFlowPage({
                     >
                       {t.direction === "in" ? "+" : "-"}
                       {formatIDR(Number(t.amount))}
+                    </TableCell>
+                    <TableCell>
+                      {t.relatedType === "manual" && (
+                        <div className="flex items-center justify-end gap-1">
+                          <ManualEntryDialog
+                            accounts={accountList}
+                            categories={categoryList}
+                            entry={{
+                              id: t.id,
+                              txnDate: t.txnDate,
+                              accountId: t.accountId,
+                              categoryId: t.categoryId,
+                              direction: t.direction,
+                              amount: Number(t.amount),
+                              description: t.description,
+                            }}
+                          />
+                          <ConfirmDeleteButton
+                            itemName="transaksi ini"
+                            onConfirm={deleteManualCashTransaction.bind(null, t.id)}
+                          />
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
