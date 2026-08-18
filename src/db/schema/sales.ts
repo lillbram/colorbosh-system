@@ -52,7 +52,12 @@ export const salesEntries = pgTable(
     returnedAt: timestamp("returned_at", { withTimezone: true }),
     returnNote: text("return_note"),
   },
-  (table) => [unique().on(table.channelId, table.orderRef)]
+  // Scoped to (channel, order, product) rather than just (channel, order) —
+  // one order_ref legitimately spans multiple rows when an order has more
+  // than one distinct product (POS carts, multi-item CSV imports). The
+  // narrower (channel, order) constraint this replaced rejected any such
+  // order's 2nd+ product as a duplicate. See CLAUDE.md §6.3.
+  (table) => [unique().on(table.channelId, table.orderRef, table.productId)]
 );
 
 export const salesLiveSessions = pgTable("sales_live_sessions", {

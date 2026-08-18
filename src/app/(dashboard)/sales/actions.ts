@@ -212,7 +212,7 @@ export async function importSalesCsv(formData: FormData) {
             createdBy: actorId,
           })
           .onConflictDoNothing({
-            target: [salesEntries.channelId, salesEntries.orderRef],
+            target: [salesEntries.channelId, salesEntries.orderRef, salesEntries.productId],
           })
           .returning({ id: salesEntries.id });
 
