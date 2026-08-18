@@ -7,7 +7,6 @@ import {
   Tag,
   Layers,
   Store,
-  Calculator,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,7 +25,6 @@ export const MAIN_NAV: NavItem[] = [
 
 export const SETTINGS_NAV: NavItem[] = [
   { label: "Produk", href: "/settings/products", icon: Layers },
-  { label: "Komponen Biaya Produksi", href: "/settings/cost-components", icon: Calculator },
   { label: "Channel", href: "/settings/channels", icon: Store },
   { label: "Akun Kas & Bank", href: "/settings/accounts", icon: Landmark },
   { label: "Kategori", href: "/settings/categories", icon: Tag },

@@ -69,6 +69,7 @@ export default async function SalesPage({
         channelId: salesEntries.channelId,
         channelName: channels.name,
         productName: products.name,
+        hppTarget: products.hppTarget,
       })
       .from(salesEntries)
       .leftJoin(channels, eq(salesEntries.channelId, channels.id))
@@ -82,7 +83,7 @@ export default async function SalesPage({
   // channel groupings in Pencairan Dana and Laporan Lengkap → Per Channel.
   const groups = new Map<
     string,
-    { channelId: string | null; channelName: string; rows: typeof rows; gross: number; bersih: number }
+    { channelId: string | null; channelName: string; rows: typeof rows; gross: number; bersih: number; profit: number }
   >();
   for (const r of rows) {
     const key = r.channelId ?? "none";
@@ -92,10 +93,12 @@ export default async function SalesPage({
       rows: [],
       gross: 0,
       bersih: 0,
+      profit: 0,
     };
     g.rows.push(r);
     g.gross += Number(r.grossAmount);
     g.bersih += Number(r.netExpected);
+    g.profit += Number(r.netExpected) - Number(r.hppTarget ?? 0) * r.qty;
     groups.set(key, g);
   }
   const groupedRows = Array.from(groups.values()).sort((a, b) => b.gross - a.gross);
@@ -246,6 +249,8 @@ export default async function SalesPage({
                   <TableHead>Qty</TableHead>
                   <TableHead>Bruto</TableHead>
                   <TableHead>Bersih</TableHead>
+                  <TableHead>HPP</TableHead>
+                  <TableHead>Profit</TableHead>
                   <TableHead>Sumber</TableHead>
                   <TableHead className="w-24">Status</TableHead>
                   {activeTab === "aktif" && <TableHead className="w-32" />}
@@ -256,7 +261,7 @@ export default async function SalesPage({
                   <Fragment key={g.channelId ?? "none"}>
                     <TableRow className="bg-black/[0.03] hover:bg-black/[0.03]">
                       <TableCell
-                        colSpan={activeTab === "aktif" ? 8 : 7}
+                        colSpan={activeTab === "aktif" ? 10 : 9}
                         className="py-2 text-sm font-semibold text-ink"
                       >
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -269,6 +274,14 @@ export default async function SalesPage({
                           </span>
                           <span className="font-mono-num text-xs font-normal text-muted">
                             Bersih {formatIDR(g.bersih)}
+                          </span>
+                          <span
+                            className={cn(
+                              "font-mono-num text-xs font-normal",
+                              g.profit < 0 ? "text-danger" : "text-success"
+                            )}
+                          >
+                            Profit {formatIDR(g.profit)}
                           </span>
                         </div>
                       </TableCell>
@@ -288,6 +301,19 @@ export default async function SalesPage({
                         <TableCell className="font-mono-num">{formatIDR(Number(r.grossAmount))}</TableCell>
                         <TableCell className="font-mono-num">
                           {formatIDR(Number(r.netExpected))}
+                        </TableCell>
+                        <TableCell className="font-mono-num text-muted">
+                          {formatIDR(Number(r.hppTarget ?? 0))}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "font-mono-num",
+                            Number(r.netExpected) - Number(r.hppTarget ?? 0) * r.qty < 0
+                              ? "text-danger"
+                              : "text-success"
+                          )}
+                        >
+                          {formatIDR(Number(r.netExpected) - Number(r.hppTarget ?? 0) * r.qty)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="neutral">{SOURCE_LABEL[r.source ?? "manual"]}</Badge>
