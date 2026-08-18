@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
+import { withTransaction } from "@/db";
 import { cashTransactions } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
 import { withAudit } from "@/lib/audit";
-import { cashTransactionSchema } from "@/lib/validators/cash-transaction";
+import { cashTransactionSchema, cashBulkImportSchema } from "@/lib/validators/cash-transaction";
 
 export async function createManualCashTransaction(formData: FormData) {
   const parsed = cashTransactionSchema.safeParse(Object.fromEntries(formData));
@@ -83,6 +84,45 @@ export async function editManualCashTransaction(id: string, formData: FormData) 
 
   revalidatePath("/cash-flow");
   return { success: true };
+}
+
+export async function bulkImportCashTransactions(formData: FormData) {
+  const raw = Object.fromEntries(formData);
+  let rows: unknown;
+  try {
+    rows = JSON.parse(String(raw.rowsJson ?? "[]"));
+  } catch {
+    return { error: "Data tidak valid" };
+  }
+
+  const parsed = cashBulkImportSchema.safeParse({ rows });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
+  }
+
+  const actorId = await getCurrentUserId();
+
+  try {
+    await withTransaction(async (tx) => {
+      await tx.insert(cashTransactions).values(
+        parsed.data.rows.map((r) => ({
+          txnDate: r.txnDate,
+          accountId: r.accountId,
+          direction: r.direction,
+          amount: String(r.amount),
+          categoryId: r.categoryId || null,
+          relatedType: "manual" as const,
+          description: r.description,
+          createdBy: actorId,
+        }))
+      );
+    });
+  } catch {
+    return { error: "Gagal mengimpor transaksi" };
+  }
+
+  revalidatePath("/cash-flow");
+  return { success: true, insertedCount: parsed.data.rows.length };
 }
 
 export async function deleteManualCashTransaction(id: string) {

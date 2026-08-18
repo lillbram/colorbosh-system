@@ -177,6 +177,7 @@ colorbosh-system/
 │   │   │   │   ├── new/import/      # CSV import
 │   │   │   │   └── new/single/      # manual entry
 │   │   │   ├── cash-flow/           # entry manual bisa diedit/dihapus (tipe 'manual' saja), lihat §6.5
+│   │   │   │   └── bulk-import/     # impor Excel massal (template + preview + validasi), lihat §6.5
 │   │   │   ├── reports/
 │   │   │   │   ├── page.tsx         # 1 halaman, 2 tab (Sederhana/Lengkap) via ?view=
 │   │   │   │   └── report-tabs.tsx
@@ -664,6 +665,11 @@ Aktifkan RLS di semua tabel. Kebijakan default:
 - Halaman `/cash-flow` = filter + list transaksi + saldo per akun.
 - Manual entry untuk pengeluaran operasional (listrik, sewa, gaji) lewat tombol "Catat Transaksi".
 - **Entry manual bisa diedit/dihapus** — tombol pensil (edit, dialog sama dengan "Catat Transaksi" tapi pre-filled) dan tombol hapus (soft-delete, konfirmasi) muncul di baris manapun dengan `related_type = 'manual'`. Entry otomatis (dari Penjualan) **tidak bisa** diedit/dihapus di sini — guard di server (`editManualCashTransaction()`/`deleteManualCashTransaction()` di `src/app/(dashboard)/cash-flow/actions.ts`) menolak kalau bukan tipe manual, dan tombolnya memang tidak dirender untuk baris itu di `page.tsx`.
+- **Impor Excel (bulk manual entry)** — tombol "Impor Excel" di `/cash-flow` membuka halaman terpisah `/cash-flow/bulk-import` (`bulk-import-form.tsx`), pola yang sama dengan Impor CSV Penjualan (§6.3) tapi tanpa langkah pemetaan kolom karena template-nya tetap (kita yang kontrol formatnya):
+  1. **Download Template** — file `.xlsx` dibuat client-side (`XLSX.utils.aoa_to_sheet`) dengan 2 sheet: "Template" (header Tanggal/Arah/Akun/Kategori/Keterangan/Nominal + 1 baris contoh) dan "Panduan" (petunjuk pengisian + daftar nama Akun & Kategori yang **benar-benar ada saat itu** di database, supaya user tinggal copy-paste, bukan mengetik ulang dan salah ketik).
+  2. **Upload** — file yang sudah diisi di-drag/drop atau dipilih, di-parse dengan `XLSX.read(..., { cellDates: true })` supaya sel bertipe tanggal Excel terbaca sebagai `Date` (bukan cuma string).
+  3. **Preview per baris** dengan validasi: Tanggal (parse `Date` object atau string `DD/MM/YYYY`/`YYYY-MM-DD`), Arah (harus persis "Masuk"/"Keluar"), Akun (dicocokkan case-insensitive ke nama akun asli, wajib ketemu), Kategori (opsional, sama caranya kalau diisi), Keterangan (wajib), Nominal (angka > 0). Baris tidak valid ditandai ikon merah + alasan (tooltip), tidak ikut diimpor — tidak all-or-nothing per file.
+  4. **Import** — hanya baris valid dikirim ke `bulkImportCashTransactions()` (`src/app/(dashboard)/cash-flow/actions.ts`), insert sekaligus dalam satu `withTransaction()` (bukan `withAudit()` — konsisten dengan pola `importSalesCsv()` yang juga tidak menulis audit log per baris untuk bulk import), semua `related_type = 'manual'` sehingga otomatis bisa diedit/dihapus individual lewat UI biasa setelah masuk.
 
 ### 6.6 Reports
 

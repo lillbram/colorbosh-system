@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Landmark } from "lucide-react";
+import { Landmark, FileSpreadsheet } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { cashTransactions, accounts, categories } from "@/db/schema";
@@ -114,7 +115,15 @@ export default async function CashFlowPage({
               </Link>
             ))}
           </div>
-          <ManualEntryDialog accounts={accountList} categories={categoryList} />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/cash-flow/bulk-import">
+                <FileSpreadsheet className="size-4" />
+                Impor Excel
+              </Link>
+            </Button>
+            <ManualEntryDialog accounts={accountList} categories={categoryList} />
+          </div>
         </div>
 
         <Card>
