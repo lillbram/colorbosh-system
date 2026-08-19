@@ -103,6 +103,16 @@ export default async function SalesPage({
   }
   const groupedRows = Array.from(groups.values()).sort((a, b) => b.gross - a.gross);
 
+  const overallSummary = groupedRows.reduce(
+    (acc, g) => ({
+      transaksi: acc.transaksi + g.rows.length,
+      gross: acc.gross + g.gross,
+      bersih: acc.bersih + g.bersih,
+      profit: acc.profit + g.profit,
+    }),
+    { transaksi: 0, gross: 0, bersih: 0, profit: 0 }
+  );
+
   function buildUrl(overrides: { status?: string; channel?: string }) {
     const params = new URLSearchParams();
     const nextStatus = overrides.status ?? activeTab;
@@ -207,6 +217,29 @@ export default async function SalesPage({
             ))}
           </div>
         </div>
+
+        {rows.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="Semua Channel"
+              transaksi={overallSummary.transaksi}
+              gross={overallSummary.gross}
+              bersih={overallSummary.bersih}
+              profit={overallSummary.profit}
+              highlight
+            />
+            {groupedRows.map((g) => (
+              <SummaryCard
+                key={g.channelId ?? "none"}
+                title={g.channelName}
+                transaksi={g.rows.length}
+                gross={g.gross}
+                bersih={g.bersih}
+                profit={g.profit}
+              />
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
           <span>Dikelompokkan per channel supaya mudah dicocokkan dengan Pencairan Dana & Laporan.</span>
@@ -349,5 +382,51 @@ export default async function SalesPage({
         </Card>
       </main>
     </>
+  );
+}
+
+function SummaryCard({
+  title,
+  transaksi,
+  gross,
+  bersih,
+  profit,
+  highlight = false,
+}: {
+  title: string;
+  transaksi: number;
+  gross: number;
+  bersih: number;
+  profit: number;
+  highlight?: boolean;
+}) {
+  return (
+    <Card className={cn("p-4", highlight && "border-primary-200 bg-primary-50/40")}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-sm font-semibold text-ink">{title}</p>
+        <Badge variant="neutral">{transaksi} transaksi</Badge>
+      </div>
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted">Bruto</span>
+          <span className="font-mono-num font-semibold text-ink">{formatIDR(gross)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted">Bersih</span>
+          <span className="font-mono-num font-semibold text-ink">{formatIDR(bersih)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted">Profit</span>
+          <span
+            className={cn(
+              "font-mono-num font-semibold",
+              profit < 0 ? "text-danger" : "text-success"
+            )}
+          >
+            {formatIDR(profit)}
+          </span>
+        </div>
+      </div>
+    </Card>
   );
 }
