@@ -27,15 +27,12 @@ type ProductOption = Option & { basePrice: string | null; avgCost: number };
 export function LiveSessionForm({
   channels,
   products,
-  accounts,
 }: {
   channels: Option[];
   products: ProductOption[];
-  accounts: Option[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [channelId, setChannelId] = useState("");
-  const [accountId, setAccountId] = useState("");
   const [total, setTotal] = useState(0);
   const [profit, setProfit] = useState(0);
   const [isPending, startTransition] = useTransition();
@@ -84,25 +81,6 @@ export function LiveSessionForm({
             <Label htmlFor="hostName">Host</Label>
             <Input id="hostName" name="hostName" />
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-1.5 pt-6">
-          <Label>Akun Tujuan</Label>
-          <Select value={accountId} onValueChange={setAccountId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih akun" />
-            </SelectTrigger>
-            <SelectContent>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <input type="hidden" name="accountId" value={accountId} />
         </CardContent>
       </Card>
 
@@ -156,7 +134,7 @@ export function LiveSessionForm({
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={isPending || !channelId || !accountId}>
+        <Button type="submit" disabled={isPending || !channelId}>
           {isPending ? "Menyimpan..." : "Simpan Rekap Live"}
         </Button>
       </div>

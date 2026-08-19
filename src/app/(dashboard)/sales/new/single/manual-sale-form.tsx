@@ -29,17 +29,14 @@ type ProductOption = Option & { basePrice: string | null; avgCost: number };
 export function ManualSaleForm({
   channels,
   products,
-  accounts,
 }: {
   channels: Option[];
   products: ProductOption[];
-  accounts: Option[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [channelId, setChannelId] = useState("");
   const [productId, setProductId] = useState("");
-  const [accountId, setAccountId] = useState("");
   const [qty, setQty] = useState("");
   const [grossEdited, setGrossEdited] = useState(false);
   const [grossValue, setGrossValue] = useState(0);
@@ -99,23 +96,6 @@ export function ManualSaleForm({
               </Select>
               <input type="hidden" name="channelId" value={channelId} />
             </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Akun Tujuan</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih akun" />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <input type="hidden" name="accountId" value={accountId} />
           </div>
 
           <div className="space-y-1.5">
@@ -231,10 +211,7 @@ export function ManualSaleForm({
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <div className="flex justify-end">
-        <Button
-          type="submit"
-          disabled={isPending || !channelId || !productId || !accountId}
-        >
+        <Button type="submit" disabled={isPending || !channelId || !productId}>
           {isPending ? "Menyimpan..." : "Simpan Penjualan"}
         </Button>
       </div>

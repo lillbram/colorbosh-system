@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { format } from "date-fns";
 import { db } from "@/db";
-import { products, channels, salesEntries, accounts } from "@/db/schema";
+import { products, channels, salesEntries } from "@/db/schema";
 import { Header } from "@/components/layout/header";
 import { PosClient } from "./pos-client";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function PosPage() {
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const [productList, channelList, accountList, todayRows] = await Promise.all([
+  const [productList, channelList, todayRows] = await Promise.all([
     db
       .select({
         id: products.id,
@@ -23,7 +23,6 @@ export default async function PosPage() {
       .where(and(eq(products.isDeleted, false), eq(products.isActive, true)))
       .orderBy(products.name),
     db.select({ id: channels.id, name: channels.name }).from(channels).orderBy(channels.name),
-    db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(eq(accounts.isActive, true)),
     db
       .select({
         orderRef: salesEntries.orderRef,
@@ -91,12 +90,7 @@ export default async function PosPage() {
     <>
       <Header title="Kasir (POS)" subtitle="Klik produk untuk menambah ke order, lalu simpan." />
       <main className="flex-1 p-6">
-        <PosClient
-          products={productsWithCost}
-          channels={channelList}
-          accounts={accountList}
-          todayOrders={todayOrders}
-        />
+        <PosClient products={productsWithCost} channels={channelList} todayOrders={todayOrders} />
       </main>
     </>
   );

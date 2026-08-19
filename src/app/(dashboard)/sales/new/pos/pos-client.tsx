@@ -25,7 +25,6 @@ import { createPosOrder, cancelPosOrder } from "../../actions";
 
 type Product = { id: string; name: string; sku: string | null; basePrice: string | null; avgCost: number };
 type Channel = { id: string; name: string };
-type Account = { id: string; name: string };
 type CartItem = { productId: string; name: string; qty: number; unitPrice: number; avgCost: number };
 type TodayOrder = {
   orderRef: string;
@@ -38,19 +37,16 @@ type TodayOrder = {
 export function PosClient({
   products,
   channels,
-  accounts,
   todayOrders,
 }: {
   products: Product[];
   channels: Channel[];
-  accounts: Account[];
   todayOrders: TodayOrder[];
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
-  const [accountId, setAccountId] = useState("");
   const [buyerNote, setBuyerNote] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -106,11 +102,10 @@ export function PosClient({
   }
 
   function handleSave() {
-    if (cart.length === 0 || !channelId || !accountId) return;
+    if (cart.length === 0 || !channelId) return;
 
     const formData = new FormData();
     formData.set("channelId", channelId);
-    formData.set("accountId", accountId);
     formData.set("buyerNote", buyerNote);
     formData.set(
       "itemsJson",
@@ -195,21 +190,6 @@ export function PosClient({
                   {channels.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih akun tujuan" />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -312,7 +292,7 @@ export function PosClient({
 
             <Button
               className="w-full"
-              disabled={cart.length === 0 || !channelId || !accountId || isPending}
+              disabled={cart.length === 0 || !channelId || isPending}
               onClick={handleSave}
             >
               {isPending ? "Menyimpan..." : "Simpan Order"}

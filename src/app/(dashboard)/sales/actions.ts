@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db, withTransaction } from "@/db";
-import { salesEntries, salesLiveSessions, channels, payoutSalesLink, cashTransactions } from "@/db/schema";
+import { salesEntries, salesLiveSessions, channels, payoutSalesLink } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
 import { withAudit } from "@/lib/audit";
 import {
@@ -26,25 +26,6 @@ async function getChannel(channelId: string) {
   };
 }
 
-/**
- * Every sale posts cash immediately — this is a POS-style system, not a
- * platform-payout-reconciliation one. See CLAUDE.md §6.3/§6.4.
- */
-async function postSaleCash(
-  tx: typeof db,
-  params: { accountId: string; amount: number; txnDate: string; channelName: string; createdBy: string | null }
-) {
-  await tx.insert(cashTransactions).values({
-    txnDate: params.txnDate,
-    accountId: params.accountId,
-    direction: "in",
-    amount: String(params.amount),
-    relatedType: "manual",
-    description: `Penjualan - ${params.channelName}`,
-    createdBy: params.createdBy,
-  });
-}
-
 export async function createManualSale(formData: FormData) {
   const parsed = manualSaleSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
@@ -54,7 +35,6 @@ export async function createManualSale(formData: FormData) {
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
   const platformFeeEst = Math.round((parsed.data.grossAmount * channel.feePct) / 100);
-  const netExpected = parsed.data.grossAmount - platformFeeEst - parsed.data.discount;
   let newId = "";
 
   try {
@@ -78,14 +58,6 @@ export async function createManualSale(formData: FormData) {
           })
           .returning({ id: salesEntries.id });
         newId = inserted.id;
-
-        await postSaleCash(tx, {
-          accountId: parsed.data.accountId,
-          amount: netExpected,
-          txnDate: parsed.data.entryDate,
-          channelName: channel.name,
-          createdBy: actorId,
-        });
       }
     );
   } catch {
@@ -93,7 +65,6 @@ export async function createManualSale(formData: FormData) {
   }
 
   revalidatePath("/sales");
-  revalidatePath("/cash-flow");
   return { success: true };
 }
 
@@ -115,7 +86,6 @@ export async function createLiveSession(formData: FormData) {
   const channel = await getChannel(parsed.data.channelId);
   const totalGross = parsed.data.entries.reduce((sum, e) => sum + e.qty * e.unitPrice, 0);
   let newSessionId = "";
-  let totalNetExpected = 0;
 
   try {
     await withAudit(
@@ -140,7 +110,6 @@ export async function createLiveSession(formData: FormData) {
           parsed.data.entries.map((e) => {
             const gross = e.qty * e.unitPrice;
             const fee = Math.round((gross * channel.feePct) / 100);
-            totalNetExpected += gross - fee;
             return {
               entryDate: parsed.data.sessionDate,
               channelId: parsed.data.channelId,
@@ -154,14 +123,6 @@ export async function createLiveSession(formData: FormData) {
             };
           })
         );
-
-        await postSaleCash(tx, {
-          accountId: parsed.data.accountId,
-          amount: totalNetExpected,
-          txnDate: parsed.data.sessionDate,
-          channelName: channel.name,
-          createdBy: actorId,
-        });
       }
     );
   } catch {
@@ -169,7 +130,6 @@ export async function createLiveSession(formData: FormData) {
   }
 
   revalidatePath("/sales");
-  revalidatePath("/cash-flow");
   redirect("/sales");
 }
 
@@ -189,10 +149,8 @@ export async function importSalesCsv(formData: FormData) {
 
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
-  const today = format(new Date(), "yyyy-MM-dd");
 
   let insertedCount = 0;
-  let totalNetExpected = 0;
 
   try {
     await withTransaction(async (tx) => {
@@ -216,20 +174,7 @@ export async function importSalesCsv(formData: FormData) {
           })
           .returning({ id: salesEntries.id });
 
-        if (result.length > 0) {
-          insertedCount += 1;
-          totalNetExpected += row.grossAmount - platformFeeEst;
-        }
-      }
-
-      if (totalNetExpected > 0) {
-        await postSaleCash(tx, {
-          accountId: parsed.data.accountId,
-          amount: totalNetExpected,
-          txnDate: today,
-          channelName: channel.name,
-          createdBy: actorId,
-        });
+        if (result.length > 0) insertedCount += 1;
       }
     });
   } catch {
@@ -237,7 +182,6 @@ export async function importSalesCsv(formData: FormData) {
   }
 
   revalidatePath("/sales");
-  revalidatePath("/cash-flow");
   return { success: true, insertedCount, skipped: parsed.data.rows.length - insertedCount };
 }
 
@@ -261,7 +205,6 @@ export async function createPosOrder(formData: FormData) {
   const orderRef = `POS-${format(new Date(), "yyyyMMdd-HHmmss-SSS")}`;
 
   let firstEntryId = "";
-  let totalNetExpected = 0;
 
   try {
     await withAudit(
@@ -273,7 +216,6 @@ export async function createPosOrder(formData: FormData) {
             parsed.data.items.map((item) => {
               const gross = item.qty * item.unitPrice;
               const fee = Math.round((gross * channel.feePct) / 100);
-              totalNetExpected += gross - fee;
               return {
                 entryDate: today,
                 channelId: parsed.data.channelId,
@@ -291,14 +233,6 @@ export async function createPosOrder(formData: FormData) {
           .returning({ id: salesEntries.id });
 
         firstEntryId = inserted[0].id;
-
-        await postSaleCash(tx, {
-          accountId: parsed.data.accountId,
-          amount: totalNetExpected,
-          txnDate: today,
-          channelName: channel.name,
-          createdBy: actorId,
-        });
       }
     );
   } catch {
@@ -307,7 +241,6 @@ export async function createPosOrder(formData: FormData) {
 
   revalidatePath("/sales");
   revalidatePath("/sales/new/pos");
-  revalidatePath("/cash-flow");
   return { success: true, orderRef };
 }
 

@@ -9,7 +9,6 @@ export const manualSaleSchema = z.object({
   discount: z.coerce.number().min(0).default(0),
   orderRef: z.string().optional().or(z.literal("")),
   buyerNote: z.string().optional().or(z.literal("")),
-  accountId: z.string().uuid("Pilih akun tujuan"),
 });
 
 export type ManualSaleInput = z.infer<typeof manualSaleSchema>;
@@ -26,7 +25,6 @@ export const liveSessionSchema = z.object({
   hostName: z.string().optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
   entries: z.array(liveEntryRowSchema).min(1, "Minimal 1 produk"),
-  accountId: z.string().uuid("Pilih akun tujuan"),
 });
 
 export type LiveSessionInput = z.infer<typeof liveSessionSchema>;
@@ -41,7 +39,6 @@ export const csvImportRowSchema = z.object({
 
 export const csvImportSchema = z.object({
   channelId: z.string().uuid("Pilih channel"),
-  accountId: z.string().uuid("Pilih akun tujuan"),
   rows: z.array(csvImportRowSchema).min(1, "Tidak ada baris valid untuk diimpor"),
 });
 
@@ -57,7 +54,6 @@ export const posOrderSchema = z.object({
   channelId: z.string().uuid("Pilih channel"),
   buyerNote: z.string().optional().or(z.literal("")),
   items: z.array(posCartItemSchema).min(1, "Keranjang masih kosong"),
-  accountId: z.string().uuid("Pilih akun tujuan"),
 });
 
 export type PosOrderInput = z.infer<typeof posOrderSchema>;
