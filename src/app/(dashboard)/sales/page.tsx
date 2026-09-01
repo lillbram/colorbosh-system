@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { ShoppingBag, Radio, Upload, PencilLine, ShoppingCart } from "lucide-react";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { format, subDays, startOfMonth, endOfMonth } from "date-fns";
 import { db } from "@/db";
 import { salesEntries, channels, products } from "@/db/schema";
 import { Header } from "@/components/layout/header";
@@ -22,6 +23,7 @@ import { formatDate, formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { cancelSalesEntry } from "./actions";
 import { ReturnSalesEntryDialog } from "./return-sales-entry-dialog";
+import { CustomDateRangeButton } from "./custom-date-range-button";
 
 export const dynamic = "force-dynamic";
 
@@ -38,13 +40,39 @@ const TABS = [
   { value: "dibatalkan", label: "Dibatalkan" },
 ];
 
+const DATE_PRESETS = [
+  { value: "all", label: "Semua Waktu" },
+  { value: "today", label: "Hari Ini" },
+  { value: "7", label: "7 Hari" },
+  { value: "30", label: "30 Hari" },
+  { value: "mtd", label: "Bulan Ini" },
+];
+
+function resolveDateRange(
+  period: string,
+  from?: string,
+  to?: string
+): { start: string; end: string } | null {
+  const now = new Date();
+  if (period === "today") {
+    const d = format(now, "yyyy-MM-dd");
+    return { start: d, end: d };
+  }
+  if (period === "7") return { start: format(subDays(now, 6), "yyyy-MM-dd"), end: format(now, "yyyy-MM-dd") };
+  if (period === "30") return { start: format(subDays(now, 29), "yyyy-MM-dd"), end: format(now, "yyyy-MM-dd") };
+  if (period === "mtd") return { start: format(startOfMonth(now), "yyyy-MM-dd"), end: format(endOfMonth(now), "yyyy-MM-dd") };
+  if (period === "custom" && from && to) return { start: from, end: to };
+  return null;
+}
+
 export default async function SalesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; channel?: string }>;
+  searchParams: Promise<{ status?: string; channel?: string; period?: string; from?: string; to?: string }>;
 }) {
-  const { status = "aktif", channel: channelFilter } = await searchParams;
+  const { status = "aktif", channel: channelFilter, period = "all", from, to } = await searchParams;
   const activeTab = status === "dibatalkan" || status === "retur" ? status : "aktif";
+  const dateRange = resolveDateRange(period, from, to);
 
   const statusClause =
     activeTab === "dibatalkan"
@@ -52,9 +80,14 @@ export default async function SalesPage({
       : activeTab === "retur"
         ? eq(salesEntries.isReturned, true)
         : and(eq(salesEntries.isDeleted, false), eq(salesEntries.isReturned, false));
-  const whereClause = channelFilter
-    ? and(statusClause, eq(salesEntries.channelId, channelFilter))
-    : statusClause;
+
+  const conditions = [statusClause];
+  if (channelFilter) conditions.push(eq(salesEntries.channelId, channelFilter));
+  if (dateRange) {
+    conditions.push(gte(salesEntries.entryDate, dateRange.start));
+    conditions.push(lte(salesEntries.entryDate, dateRange.end));
+  }
+  const whereClause = conditions.length > 1 ? and(...conditions) : conditions[0];
 
   const [rows, channelList] = await Promise.all([
     db
@@ -113,15 +146,30 @@ export default async function SalesPage({
     { transaksi: 0, gross: 0, bersih: 0, profit: 0 }
   );
 
-  function buildUrl(overrides: { status?: string; channel?: string }) {
+  function buildUrl(overrides: { status?: string; channel?: string; period?: string }) {
     const params = new URLSearchParams();
     const nextStatus = overrides.status ?? activeTab;
     const nextChannel = "channel" in overrides ? overrides.channel : channelFilter;
+    const nextPeriod = overrides.period ?? period;
     if (nextStatus !== "aktif") params.set("status", nextStatus);
     if (nextChannel) params.set("channel", nextChannel);
+    if (nextPeriod !== "all") {
+      params.set("period", nextPeriod);
+      if (nextPeriod === "custom" && from && to) {
+        params.set("from", from);
+        params.set("to", to);
+      }
+    }
     const qs = params.toString();
     return qs ? `/sales?${qs}` : "/sales";
   }
+
+  // Query string carrying just status+channel (no period/from/to), for the
+  // custom range picker to append its own period=custom&from=&to= to.
+  const baseQueryParams = new URLSearchParams();
+  if (activeTab !== "aktif") baseQueryParams.set("status", activeTab);
+  if (channelFilter) baseQueryParams.set("channel", channelFilter);
+  const baseQuery = baseQueryParams.toString();
 
   return (
     <>
@@ -218,6 +266,27 @@ export default async function SalesPage({
           </div>
         </div>
 
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-black/5 p-1">
+          {DATE_PRESETS.map((p) => (
+            <Link
+              key={p.value}
+              href={buildUrl({ period: p.value })}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium",
+                period === p.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+              )}
+            >
+              {p.label}
+            </Link>
+          ))}
+          <CustomDateRangeButton
+            baseQuery={baseQuery}
+            active={period === "custom"}
+            initialFrom={period === "custom" ? from : undefined}
+            initialTo={period === "custom" ? to : undefined}
+          />
+        </div>
+
         {rows.length > 0 && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard
@@ -244,11 +313,11 @@ export default async function SalesPage({
         <div className="flex items-center gap-1.5 px-1 text-xs text-muted">
           <span>Dikelompokkan per channel supaya mudah dicocokkan dengan Pencairan Dana & Laporan.</span>
           <InfoTooltip>
-            Tiap channel di sini menjumlahkan SEMUA transaksi pada tab & filter aktif saat ini
-            (tidak dibatasi periode tanggal) — beda dengan Laporan Lengkap yang dibatasi periode
-            filter di sana, dan beda dengan Pencairan Dana yang memakai Bersih (Total Terjual)
-            bukan Bruto. Untuk mencocokkan persis, bandingkan Bersih di sini dengan kolom Bersih
-            di Laporan Lengkap → Per Channel pada periode yang sama.
+            Tiap channel di sini menjumlahkan transaksi pada tab, channel, dan periode tanggal yang
+            aktif saat ini (default &ldquo;Semua Waktu&rdquo; kalau belum difilter) — beda dengan
+            Pencairan Dana yang selalu memakai Bersih (Total Terjual) sepanjang waktu, bukan Bruto.
+            Untuk mencocokkan persis dengan Laporan Lengkap, samakan periode filter di sini dengan
+            periode filter di sana, lalu bandingkan kolom Bersih.
           </InfoTooltip>
         </div>
 
