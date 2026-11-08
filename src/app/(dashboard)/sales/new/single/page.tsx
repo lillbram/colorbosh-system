@@ -24,7 +24,7 @@ export default async function ManualSalePage() {
   return (
     <>
       <Header title="Input Penjualan Manual" subtitle="Untuk order sporadis atau koreksi data." />
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-4 md:p-6">
         <ManualSaleForm channels={channelList} products={productsWithCost} />
       </main>
     </>

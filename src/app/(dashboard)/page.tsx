@@ -60,7 +60,7 @@ export default async function DashboardHomePage() {
     <>
       <Header title="Ringkasan Bisnis" subtitle="Pantau kas, penjualan, dan profit." />
 
-      <main className="flex-1 space-y-6 p-6">
+      <main className="flex-1 space-y-6 p-4 md:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard icon={Wallet} label="Saldo Kas" value={saldoKas} isMoney />
           <StatCard

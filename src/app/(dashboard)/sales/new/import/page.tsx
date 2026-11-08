@@ -22,7 +22,7 @@ export default async function ImportSalesPage() {
         title="Impor Penjualan"
         subtitle="Unggah file export dari TikTok Shop atau Shopee, lalu cocokkan kolomnya."
       />
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-4 md:p-6">
         <CsvImportForm channels={channelList} products={productList} />
       </main>
     </>

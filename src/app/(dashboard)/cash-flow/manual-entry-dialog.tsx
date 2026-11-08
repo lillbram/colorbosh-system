@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, ScanLine, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { DateInput } from "@/components/forms/date-input";
 import { MoneyInput } from "@/components/forms/money-input";
+import { scanReceiptImage } from "@/lib/receipt-parser";
 import { createManualCashTransaction, editManualCashTransaction } from "./actions";
 
 type Option = { id: string; name: string };
@@ -54,6 +55,41 @@ export function ManualEntryDialog({
   const [accountId, setAccountId] = useState(entry?.accountId ?? "");
   const [categoryId, setCategoryId] = useState(entry?.categoryId ?? "");
   const [isPending, startTransition] = useTransition();
+  const [scanning, setScanning] = useState(false);
+  const [prefill, setPrefill] = useState<{
+    key: number;
+    amount?: number;
+    txnDate?: string;
+    description?: string;
+  }>({ key: 0 });
+
+  async function handleReceipt(file: File | undefined) {
+    if (!file) return;
+    setScanning(true);
+    setError(null);
+    try {
+      const r = await scanReceiptImage(file);
+      if (!r.amount && !r.txnDate && !r.recipient) {
+        setError("Struk tidak terbaca. Coba foto yang lebih jelas atau isi manual.");
+        return;
+      }
+      const description = [r.recipient && `Transfer ke ${r.recipient}`, r.note]
+        .filter(Boolean)
+        .join(" - ");
+      setDirection("out");
+      setPrefill((p) => ({
+        key: p.key + 1,
+        amount: r.amount ?? undefined,
+        txnDate: r.txnDate ?? undefined,
+        description: description || undefined,
+      }));
+      toast.success("Struk terbaca, cek lagi datanya sebelum simpan");
+    } catch {
+      setError("Gagal membaca struk. Coba lagi atau isi manual.");
+    } finally {
+      setScanning(false);
+    }
+  }
 
   const filteredCategories = categories.filter(
     (c) => c.kind === (direction === "in" ? "income" : "expense")
@@ -95,6 +131,27 @@ export function ManualEntryDialog({
           }}
           className="space-y-4"
         >
+          {!isEdit && (
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-primary-500/50 bg-primary-50 px-3 py-3 text-sm font-medium text-primary-700 hover:bg-primary-100">
+              {scanning ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ScanLine className="size-4" />
+              )}
+              {scanning ? "Membaca struk..." : "Upload Bukti Transfer (BRImo)"}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={scanning}
+                onChange={(e) => {
+                  handleReceipt(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -121,11 +178,20 @@ export function ManualEntryDialog({
             <input type="hidden" name="direction" value={direction} />
           </div>
 
-          <MoneyInput name="amount" label="Nominal" required defaultValue={entry?.amount} />
+          <MoneyInput
+            key={`amt-${prefill.key}`}
+            name="amount"
+            label="Nominal"
+            required
+            defaultValue={prefill.amount ?? entry?.amount}
+          />
           <DateInput
+            key={`date-${prefill.key}`}
             name="txnDate"
             label="Tanggal"
-            defaultValue={entry?.txnDate ?? new Date().toISOString().slice(0, 10)}
+            defaultValue={
+              prefill.txnDate ?? entry?.txnDate ?? new Date().toISOString().slice(0, 10)
+            }
           />
 
           <div className="space-y-1.5">
@@ -165,11 +231,12 @@ export function ManualEntryDialog({
           <div className="space-y-1.5">
             <Label htmlFor="description">Keterangan</Label>
             <Input
+              key={`desc-${prefill.key}`}
               id="description"
               name="description"
               required
               placeholder="mis. Bayar listrik toko"
-              defaultValue={entry?.description ?? ""}
+              defaultValue={prefill.description ?? entry?.description ?? ""}
             />
           </div>
 

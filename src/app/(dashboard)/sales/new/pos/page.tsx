@@ -89,7 +89,7 @@ export default async function PosPage() {
   return (
     <>
       <Header title="Kasir (POS)" subtitle="Klik produk untuk menambah ke order, lalu simpan." />
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-4 md:p-6">
         <PosClient products={productsWithCost} channels={channelList} todayOrders={todayOrders} />
       </main>
     </>

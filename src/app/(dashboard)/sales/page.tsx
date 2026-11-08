@@ -178,7 +178,7 @@ export default async function SalesPage({
         subtitle="Rekap penjualan dari TikTok Live, TikTok Shop, dan Shopee. Bingung dengan impor file? Coba Kasir (POS)."
       />
 
-      <main className="flex-1 space-y-4 p-6">
+      <main className="flex-1 space-y-4 p-4 md:p-6">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Link href="/sales/new/pos">
             <Card className="flex h-full items-center gap-3 border-primary-200 bg-primary-50/40 p-4 transition-shadow hover:shadow-md">

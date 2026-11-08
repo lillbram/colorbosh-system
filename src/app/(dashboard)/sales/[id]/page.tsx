@@ -70,7 +70,7 @@ export default async function SalesEntryDetailPage({
         subtitle={entry.orderRef ? `No. Order ${entry.orderRef}` : entry.channelName ?? "-"}
       />
 
-      <main className="flex-1 space-y-4 p-6">
+      <main className="flex-1 space-y-4 p-4 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={entry.isDeleted ? "danger" : entry.isReturned ? "warning" : "success"}>

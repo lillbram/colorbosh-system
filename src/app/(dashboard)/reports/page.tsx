@@ -352,7 +352,7 @@ export default async function ReportsPage({
         subtitle="Laporan sederhana untuk ringkasan cepat, laporan lengkap untuk detail per channel/produk."
       />
 
-      <main className="flex-1 space-y-4 p-6">
+      <main className="flex-1 space-y-4 p-4 md:p-6">
         <div className="inline-flex items-center gap-1 rounded-lg bg-black/5 p-1">
           {VIEWS.map((v) => (
             <Link

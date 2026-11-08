@@ -31,7 +31,7 @@ export default async function AccountsPage() {
     <>
       <Header title="Akun Kas & Bank" subtitle="Kelola rekening bank, kas tunai, dan e-wallet." />
 
-      <main className="flex-1 space-y-4 p-6">
+      <main className="flex-1 space-y-4 p-4 md:p-6">
         <div className="flex justify-end">
           <AccountFormDialog />
         </div>

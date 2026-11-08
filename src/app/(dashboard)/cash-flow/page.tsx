@@ -71,7 +71,7 @@ export default async function CashFlowPage({
     <>
       <Header title="Arus Kas" subtitle="Semua uang masuk dan keluar dari setiap akun." />
 
-      <main className="flex-1 space-y-4 p-6">
+      <main className="flex-1 space-y-4 p-4 md:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card className="p-5">
             <p className="text-sm text-muted">Total Saldo</p>

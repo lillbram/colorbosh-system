@@ -24,7 +24,7 @@ export default async function NewLiveSessionPage() {
   return (
     <>
       <Header title="Rekap Live" subtitle="Input massal penjualan dari satu sesi TikTok Live." />
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-4 md:p-6">
         <LiveSessionForm channels={channelList} products={productsWithCost} />
       </main>
     </>

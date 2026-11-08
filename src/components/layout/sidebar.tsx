@@ -33,11 +33,16 @@ function NavLink({
   );
 }
 
-export function Sidebar() {
+export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border/70 bg-white px-3 py-4">
+    <div
+      className="flex h-full flex-col px-3 py-4"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a")) onNavigate?.();
+      }}
+    >
       <button className="flex items-center gap-2 rounded-lg border border-border/70 px-3 py-2 text-left hover:bg-canvas">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-500 text-sm font-semibold text-white">
           C
@@ -77,6 +82,14 @@ export function Sidebar() {
         <HelpCircle className="size-4.5" />
         Bantuan
       </Link>
+    </div>
+  );
+}
+
+export function Sidebar() {
+  return (
+    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 border-r border-border/70 bg-white md:block">
+      <SidebarContent />
     </aside>
   );
 }
