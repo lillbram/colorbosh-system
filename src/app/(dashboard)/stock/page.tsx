@@ -26,7 +26,12 @@ import { OpeningStockDialog } from "./opening-stock-dialog";
 
 export const dynamic = "force-dynamic";
 
-export default async function StockPage() {
+export default async function StockPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ new?: string }>;
+}) {
+  const { new: openNew } = await searchParams;
   const today = todayJakarta();
   const [levels, threshold, role, tailorTxns] = await Promise.all([
     getStockLevels(),
@@ -90,6 +95,7 @@ export default async function StockPage() {
               label: `${formatDate(t.txnDate)} · ${formatIDR(Number(t.amount))} · ${t.description ?? "-"}`,
             }))}
             today={today}
+            defaultOpen={openNew === "1"}
           />
         </div>
 
@@ -103,6 +109,8 @@ export default async function StockPage() {
               />
             </div>
           ) : (
+            <>
+            <div className="hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -145,6 +153,37 @@ export default async function StockPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
+            <div className="divide-y divide-border/70 md:hidden">
+              {levels.map((l) => (
+                <div key={l.productId} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink">{l.name}</p>
+                    <p className="text-xs text-muted">
+                      {l.sku ?? "-"}
+                      {isOwner && ` · ${formatIDR(Math.max(0, l.qty) * l.hppTarget)}`}
+                    </p>
+                    <div className="mt-1">
+                      {!l.hasOpening ? (
+                        <Badge variant="neutral">Stok awal belum diatur</Badge>
+                      ) : l.qty <= 0 ? (
+                        <Badge variant="danger">Habis</Badge>
+                      ) : l.qty <= threshold ? (
+                        <Badge variant="warning">Menipis</Badge>
+                      ) : (
+                        <Badge variant="success">Aman</Badge>
+                      )}
+                    </div>
+                  </div>
+                  {l.hasOpening ? (
+                    <span className="font-mono-num text-xl font-bold text-ink">{l.qty}</span>
+                  ) : (
+                    <OpeningStockDialog productId={l.productId} productName={l.name} today={today} />
+                  )}
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </Card>
       </main>

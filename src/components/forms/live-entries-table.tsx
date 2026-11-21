@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRole } from "@/components/layout/role-context";
 import { formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,7 @@ export function LiveEntriesTable({
   onTotalChange?: (total: number) => void;
   onProfitChange?: (profit: number) => void;
 }) {
+  const showProfit = useRole() === "owner";
   const [rows, setRows] = useState<Row[]>(() => {
     if (typeof window === "undefined") return [EMPTY_ROW];
     const saved = window.localStorage.getItem(DRAFT_KEY);
@@ -98,9 +100,11 @@ export function LiveEntriesTable({
               <th className="w-36 px-3 py-2 text-right text-xs font-medium uppercase text-muted">
                 Subtotal
               </th>
-              <th className="w-32 px-3 py-2 text-right text-xs font-medium uppercase text-muted">
-                Profit
-              </th>
+              {showProfit && (
+                <th className="w-32 px-3 py-2 text-right text-xs font-medium uppercase text-muted">
+                  Profit
+                </th>
+              )}
               <th className="w-10" />
             </tr>
           </thead>
@@ -161,14 +165,16 @@ export function LiveEntriesTable({
                     />
                   </td>
                   <td className="p-1.5 text-right font-mono-num">{formatIDR(subtotal)}</td>
-                  <td
-                    className={cn(
-                      "p-1.5 text-right font-mono-num text-xs",
-                      row.productId && (rowProfit < 0 ? "text-danger" : "text-success")
-                    )}
-                  >
-                    {row.productId ? formatIDR(rowProfit) : "-"}
-                  </td>
+                  {showProfit && (
+                    <td
+                      className={cn(
+                        "p-1.5 text-right font-mono-num text-xs",
+                        row.productId && (rowProfit < 0 ? "text-danger" : "text-success")
+                      )}
+                    >
+                      {row.productId ? formatIDR(rowProfit) : "-"}
+                    </td>
+                  )}
                   <td className="p-1.5 text-center">
                     <Button type="button" size="icon" variant="ghost" onClick={() => removeRow(index)}>
                       <Trash2 className="size-4 text-danger" />

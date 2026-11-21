@@ -42,14 +42,17 @@ export function ManualEntryDialog({
   accounts,
   categories,
   entry,
+  defaultOpen = false,
 }: {
   accounts: Option[];
   categories: (Option & { kind: "income" | "expense" })[];
   /** Pass an existing entry to render this as an edit dialog instead of a create dialog. */
   entry?: ExistingEntry;
+  /** Open on first render (used by the mobile "+" quick action). */
+  defaultOpen?: boolean;
 }) {
   const isEdit = !!entry;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [error, setError] = useState<string | null>(null);
   const [direction, setDirection] = useState<"in" | "out">(entry?.direction ?? "out");
   const [accountId, setAccountId] = useState(entry?.accountId ?? "");

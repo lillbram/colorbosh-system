@@ -31,6 +31,11 @@ export function LoginForm() {
         <Input id="password" name="password" type="password" placeholder="••••••••" required />
       </div>
 
+      <label className="flex items-center gap-2 text-sm text-ink">
+        <input type="checkbox" name="remember" defaultChecked className="size-4" />
+        Ingat perangkat ini (30 hari)
+      </label>
+
       {error && <p className="text-sm text-danger">{error}</p>}
 
       <Button type="submit" className="w-full" disabled={isPending}>

@@ -21,12 +21,14 @@ export function StockInDialog({
   products,
   cashOptions,
   today,
+  defaultOpen = false,
 }: {
   products: { id: string; name: string }[];
   cashOptions: { id: string; label: string }[];
   today: string;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 

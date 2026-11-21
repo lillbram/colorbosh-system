@@ -24,7 +24,7 @@ export default async function LoginPage() {
         </div>
         <h1 className="text-h2 text-ink">Masuk ke Colorbosh</h1>
         <p className="text-sm text-muted">
-          Kelola pengadaan, produksi, penjualan, dan kas dalam satu tempat.
+          Kelola penjualan, stok, dan kas dalam satu tempat.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

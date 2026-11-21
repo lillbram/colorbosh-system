@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { ServiceWorkerRegister } from "@/components/layout/sw-register";
 import "./globals.css";
 
 const inter = Inter({
@@ -16,7 +17,12 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Colorbosh",
   description: "Kelola penjualan, stok, dan kas bisnis Colorbosh.",
-  icons: { icon: "/logo-placeholder.svg" },
+  icons: { icon: "/logo-placeholder.svg", apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Colorbosh", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#3B4EA0",
 };
 
 export default function RootLayout({
@@ -31,6 +37,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
+        <ServiceWorkerRegister />
         <Toaster richColors position="top-right" />
       </body>
     </html>

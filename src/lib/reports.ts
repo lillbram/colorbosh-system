@@ -1,4 +1,5 @@
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { todayJakarta } from "@/lib/period";
 import { format, startOfMonth, subMonths } from "date-fns";
 import { db } from "@/db";
 import { getPnL } from "@/lib/finance";
@@ -214,8 +215,22 @@ export async function getAttentionItems(): Promise<AttentionItem[]> {
   return [];
 }
 
+export async function getTodayPcs(): Promise<number> {
+  const [row] = await db
+    .select({ pcs: sql<number>`coalesce(sum(${salesEntries.qty}), 0)::int` })
+    .from(salesEntries)
+    .where(
+      and(
+        eq(salesEntries.isDeleted, false),
+        eq(salesEntries.isReturned, false),
+        eq(salesEntries.entryDate, todayJakarta())
+      )
+    );
+  return row?.pcs ?? 0;
+}
+
 export async function getTodaySummary() {
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = todayJakarta();
   const rows = await db
     .select({ grossAmount: salesEntries.grossAmount, channelId: salesEntries.channelId })
     .from(salesEntries)

@@ -7,6 +7,7 @@ import { ChannelDonut } from "@/components/dashboard/channel-donut";
 import { MonthPicker } from "@/components/shared/month-picker";
 import { formatIDR, lastRecordedNote } from "@/lib/format";
 import { getCurrentRole } from "@/lib/auth";
+import { getLowStockThreshold, getStockLevels } from "@/lib/stock";
 import { monthLabel, monthToDate, previousPeriod, recentMonths, todayJakarta } from "@/lib/period";
 import {
   getSaldoKas,
@@ -16,6 +17,7 @@ import {
   getMonthlyRevenueTrend,
   getChannelBreakdown,
   getTodaySummary,
+  getTodayPcs,
 } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +55,12 @@ export default async function DashboardHomePage({
     getTodaySummary(),
   ]);
 
+  // Admin lands on today's numbers first: pcs sold, omzet, products running low.
+  const [todayPcs, stockLevels, lowThreshold] = isOwner
+    ? [0, [], 0]
+    : await Promise.all([getTodayPcs(), getStockLevels(), getLowStockThreshold()]);
+  const lowStockCount = stockLevels.filter((l) => l.hasOpening && l.qty <= lowThreshold).length;
+
   const salesTrendPct =
     penjualanBulanLalu > 0
       ? Math.round(((penjualanBulanIni - penjualanBulanLalu) / penjualanBulanLalu) * 100)
@@ -67,6 +75,25 @@ export default async function DashboardHomePage({
       <Header title="Ringkasan Bisnis" subtitle="Pantau kas, penjualan, dan profit." />
 
       <main className="flex-1 space-y-6 p-4 md:p-6">
+        {!isOwner && (
+          <div className="grid grid-cols-3 gap-3">
+            <Card className="p-3">
+              <p className="text-xs text-muted">Terjual hari ini</p>
+              <p className="font-mono-num mt-1 text-xl font-bold text-ink">{todayPcs} pcs</p>
+            </Card>
+            <Card className="p-3">
+              <p className="text-xs text-muted">Omzet hari ini</p>
+              <p className="font-mono-num mt-1 text-base font-bold text-ink md:text-xl">
+                {formatIDR(todaySummary.total)}
+              </p>
+            </Card>
+            <Card className={`p-3 ${lowStockCount > 0 ? "border-warning/50 bg-warning/5" : ""}`}>
+              <p className="text-xs text-muted">Stok menipis</p>
+              <p className="font-mono-num mt-1 text-xl font-bold text-ink">{lowStockCount} produk</p>
+            </Card>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <MonthPicker basePath="/" params={{}} months={recentMonths()} value={monthParam ? month : null} />
           <p className="text-sm text-muted">

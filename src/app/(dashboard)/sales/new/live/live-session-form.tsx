@@ -15,6 +15,9 @@ import {
 } from "@/components/ui/select";
 import { DateInput } from "@/components/forms/date-input";
 import { LiveEntriesTable } from "@/components/forms/live-entries-table";
+import { LiveMobileList } from "@/components/forms/live-mobile-list";
+import { useRole } from "@/components/layout/role-context";
+import { useIsMobile } from "@/lib/use-media-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatIDR } from "@/lib/format";
@@ -36,6 +39,9 @@ export function LiveSessionForm({
   const [total, setTotal] = useState(0);
   const [profit, setProfit] = useState(0);
   const [isPending, startTransition] = useTransition();
+  const isMobile = useIsMobile();
+  const showProfit = useRole() === "owner";
+  const ListComponent = isMobile ? LiveMobileList : LiveEntriesTable;
 
   return (
     <form
@@ -89,13 +95,14 @@ export function LiveSessionForm({
           <CardTitle>Produk Terjual</CardTitle>
         </CardHeader>
         <CardContent>
-          <LiveEntriesTable
+          <ListComponent
             name="entriesJson"
             products={products}
             onTotalChange={setTotal}
             onProfitChange={setProfit}
           />
           <div className="mt-3 flex flex-wrap items-center justify-end gap-4 text-sm">
+            {showProfit && (
             <span className="inline-flex items-center gap-1 text-muted">
               Estimasi Profit
               <InfoTooltip>
@@ -112,6 +119,7 @@ export function LiveSessionForm({
                 {formatIDR(profit)}
               </span>
             </span>
+            )}
             <span className="text-muted">
               Total Bruto:{" "}
               <span className="font-mono-num text-base font-semibold text-ink">

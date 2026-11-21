@@ -233,7 +233,7 @@ export default async function SalesPage({
       />
 
       <main className="flex-1 space-y-4 p-4 md:p-6">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="hidden grid-cols-1 gap-3 sm:grid-cols-2 md:grid xl:grid-cols-4">
           <Link href="/sales/new/pos">
             <Card className="flex h-full items-center gap-3 border-primary-200 bg-primary-50/40 p-4 transition-shadow hover:shadow-md">
               <div className="flex size-10 items-center justify-center rounded-full bg-primary-500">
@@ -475,6 +475,8 @@ export default async function SalesPage({
               />
             </div>
           ) : (
+            <>
+            <div className="hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -585,6 +587,72 @@ export default async function SalesPage({
                 ))}
               </TableBody>
             </Table>
+            </div>
+
+            <div className="divide-y divide-border/70 md:hidden">
+              {groupedRows.map((g) => (
+                <div key={g.channelId ?? "none"}>
+                  <div className="bg-canvas px-4 py-2">
+                    <p className="text-sm font-semibold text-ink">{g.channelName}</p>
+                    <p className="font-mono-num text-xs text-muted">
+                      {g.rows.length} transaksi · Bruto {formatIDR(g.gross)}
+                      {isOwner && ` · Profit ${formatIDR(g.profit)}`}
+                    </p>
+                  </div>
+                  {g.rows.map((r) => {
+                    const profit = Number(r.netExpected) - Number(r.hppTarget ?? 0) * r.qty;
+                    return (
+                      <div key={r.id} className="flex items-start gap-3 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/sales/${r.id}`} className="block truncate text-sm font-medium text-primary-600">
+                            {r.productName ?? "-"}
+                          </Link>
+                          <p className="text-xs text-muted">
+                            {formatDate(r.entryDate)} · {r.qty} pcs · {SOURCE_LABEL[r.source ?? "manual"]}
+                          </p>
+                          {activeTab === "retur" && r.returnNote && (
+                            <p className="mt-0.5 text-xs text-muted">{r.returnNote}</p>
+                          )}
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="font-mono-num text-sm font-semibold text-ink">
+                              {formatIDR(Number(r.grossAmount))}
+                            </span>
+                            {isOwner && (
+                              <span
+                                className={cn(
+                                  "font-mono-num text-xs",
+                                  profit < 0 ? "text-danger" : "text-success"
+                                )}
+                              >
+                                Profit {formatIDR(profit)}
+                              </span>
+                            )}
+                            <Badge
+                              variant={
+                                activeTab === "dibatalkan" ? "danger" : activeTab === "retur" ? "warning" : "success"
+                              }
+                            >
+                              {activeTab === "dibatalkan" ? "Dibatalkan" : activeTab === "retur" ? "Retur" : "Aktif"}
+                            </Badge>
+                          </div>
+                        </div>
+                        {activeTab === "aktif" && (
+                          <div className="flex shrink-0 gap-1">
+                            <ReturnSalesEntryDialog entryId={r.id} size="icon" />
+                            <ConfirmCancelButton
+                              itemName="penjualan ini"
+                              size="icon"
+                              onConfirm={cancelSalesEntry.bind(null, r.id)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </Card>
         )}

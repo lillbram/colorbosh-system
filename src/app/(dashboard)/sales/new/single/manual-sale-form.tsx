@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useRole } from "@/components/layout/role-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,7 @@ export function ManualSaleForm({
   channels: Option[];
   products: ProductOption[];
 }) {
+  const showProfit = useRole() === "owner";
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [channelId, setChannelId] = useState("");
@@ -180,7 +182,7 @@ export function ManualSaleForm({
         </CardContent>
       </Card>
 
-      {productId && (
+      {productId && showProfit && (
         <Card className="border-primary-200 bg-primary-50/40">
           <CardContent className="flex items-center justify-between gap-3 p-4">
             <div className="flex items-center gap-1.5 text-sm text-muted">

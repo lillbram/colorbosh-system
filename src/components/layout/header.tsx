@@ -57,6 +57,9 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
+              <a href="/account/pin">Kunci PIN</a>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <a href="/settings/users">Pengaturan</a>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

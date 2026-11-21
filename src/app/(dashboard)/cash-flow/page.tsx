@@ -27,9 +27,9 @@ export const dynamic = "force-dynamic";
 export default async function CashFlowPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string }>;
+  searchParams: Promise<{ account?: string; new?: string }>;
 }) {
-  const { account: accountFilter } = await searchParams;
+  const { account: accountFilter, new: openNew } = await searchParams;
 
   const [accountList, categoryList, allTxns] = await Promise.all([
     db.select().from(accounts).orderBy(accounts.name),
@@ -66,6 +66,30 @@ export default async function CashFlowPage({
     : allTxns;
 
   const totalSaldo = balances.reduce((sum, b) => sum + b.balance, 0);
+
+  const rowActions = (t: (typeof rows)[number]) =>
+    t.relatedType === "manual" ? (
+      <div className="flex items-center justify-end gap-1">
+        <ManualEntryDialog
+          accounts={accountList}
+          categories={categoryList}
+          entry={{
+            id: t.id,
+            txnDate: t.txnDate,
+            accountId: t.accountId,
+            categoryId: t.categoryId,
+            direction: t.direction,
+            amount: Number(t.amount),
+            description: t.description,
+          }}
+        />
+        <ConfirmDeleteButton
+          itemName="transaksi ini"
+          onConfirm={deleteManualCashTransaction.bind(null, t.id)}
+        />
+      </div>
+    ) : null;
+
 
   return (
     <>
@@ -122,7 +146,7 @@ export default async function CashFlowPage({
                 Impor Excel
               </Link>
             </Button>
-            <ManualEntryDialog accounts={accountList} categories={categoryList} />
+            <ManualEntryDialog accounts={accountList} categories={categoryList} defaultOpen={openNew === "1"} />
           </div>
         </div>
 
@@ -136,6 +160,8 @@ export default async function CashFlowPage({
               />
             </div>
           ) : (
+            <>
+            <div className="hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -171,32 +197,37 @@ export default async function CashFlowPage({
                       {formatIDR(Number(t.amount))}
                     </TableCell>
                     <TableCell>
-                      {t.relatedType === "manual" && (
-                        <div className="flex items-center justify-end gap-1">
-                          <ManualEntryDialog
-                            accounts={accountList}
-                            categories={categoryList}
-                            entry={{
-                              id: t.id,
-                              txnDate: t.txnDate,
-                              accountId: t.accountId,
-                              categoryId: t.categoryId,
-                              direction: t.direction,
-                              amount: Number(t.amount),
-                              description: t.description,
-                            }}
-                          />
-                          <ConfirmDeleteButton
-                            itemName="transaksi ini"
-                            onConfirm={deleteManualCashTransaction.bind(null, t.id)}
-                          />
-                        </div>
-                      )}
+                      {rowActions(t)}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            </div>
+            <div className="divide-y divide-border/70 md:hidden">
+              {rows.map((t) => (
+                <div key={t.id} className="flex items-start gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-ink">{t.description}</p>
+                    <p className="text-xs text-muted">
+                      {formatDate(t.txnDate)} · {t.accountName ?? "-"} · {t.categoryName ?? "-"}
+                      {t.relatedType && t.relatedType !== "manual" && " · otomatis"}
+                    </p>
+                    <p
+                      className={cn(
+                        "mt-1 font-mono-num text-sm font-semibold",
+                        t.direction === "in" ? "text-success" : "text-danger"
+                      )}
+                    >
+                      {t.direction === "in" ? "+" : "-"}
+                      {formatIDR(Number(t.amount))}
+                    </p>
+                  </div>
+                  <div className="shrink-0">{rowActions(t)}</div>
+                </div>
+              ))}
+            </div>
+            </>
           )}
         </Card>
       </main>

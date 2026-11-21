@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
@@ -21,7 +21,10 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
+import { useRole } from "@/components/layout/role-context";
 import { createPosOrder, cancelPosOrder } from "../../actions";
+
+const CHANNEL_KEY = "pos.lastChannel";
 
 type Product = { id: string; name: string; sku: string | null; basePrice: string | null; avgCost: number };
 type Channel = { id: string; name: string };
@@ -49,6 +52,23 @@ export function PosClient({
   const [channelId, setChannelId] = useState(channels[0]?.id ?? "");
   const [buyerNote, setBuyerNote] = useState("");
   const [isPending, startTransition] = useTransition();
+  const showProfit = useRole() === "owner";
+
+  // Remember the last channel used on this device (the admin mostly sells on one channel).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CHANNEL_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after mount
+      if (saved && channels.some((c) => c.id === saved)) setChannelId(saved);
+    } catch {}
+  }, [channels]);
+
+  function chooseChannel(id: string) {
+    setChannelId(id);
+    try {
+      localStorage.setItem(CHANNEL_KEY, id);
+    } catch {}
+  }
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -59,6 +79,8 @@ export function PosClient({
   }, [products, search]);
 
   const total = cart.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
+  const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const qtyInCart = (id: string) => cart.find((i) => i.productId === id)?.qty ?? 0;
   const totalProfit = cart.reduce(
     (sum, item) => sum + item.qty * (item.unitPrice - item.avgCost),
     0
@@ -126,7 +148,7 @@ export function PosClient({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 pb-24 md:pb-0 xl:grid-cols-3">
       {/* Product picker */}
       <div className="space-y-4 xl:col-span-2">
         <Card>
@@ -153,20 +175,51 @@ export function PosClient({
           </Card>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {filteredProducts.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => addToCart(p)}
-                className="flex flex-col items-start gap-1 rounded-card border border-border/70 bg-white p-3 text-left transition-shadow hover:shadow-md"
-              >
-                <p className="text-sm font-medium text-ink">{p.name}</p>
-                {p.sku && <p className="text-xs text-muted">{p.sku}</p>}
-                <p className="font-mono-num mt-1 text-sm font-semibold text-primary-600">
-                  {formatIDR(Number(p.basePrice ?? 0))}
-                </p>
-              </button>
-            ))}
+            {filteredProducts.map((p) => {
+              const inCart = qtyInCart(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "flex flex-col rounded-card border bg-white p-3 transition-shadow hover:shadow-md",
+                    inCart > 0 ? "border-primary-500 ring-1 ring-primary-500/30" : "border-border/70"
+                  )}
+                >
+                  <button type="button" onClick={() => addToCart(p)} className="flex flex-col items-start gap-1 text-left">
+                    <p className="text-sm font-medium text-ink">{p.name}</p>
+                    {p.sku && <p className="text-xs text-muted">{p.sku}</p>}
+                    <p className="font-mono-num mt-1 text-sm font-semibold text-primary-600">
+                      {formatIDR(Number(p.basePrice ?? 0))}
+                    </p>
+                  </button>
+                  {inCart > 0 && (
+                    <div className="mt-2 flex items-center justify-between">
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="size-9"
+                        aria-label={`Kurangi ${p.name}`}
+                        onClick={() => updateQty(p.id, inCart - 1)}
+                      >
+                        <Minus className="size-4" />
+                      </Button>
+                      <span className="font-mono-num text-base font-bold text-ink">{inCart}</span>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="size-9"
+                        aria-label={`Tambah ${p.name}`}
+                        onClick={() => addToCart(p)}
+                      >
+                        <Plus className="size-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -182,7 +235,7 @@ export function PosClient({
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
-              <Select value={channelId} onValueChange={setChannelId}>
+              <Select value={channelId} onValueChange={chooseChannel}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih channel" />
                 </SelectTrigger>
@@ -243,14 +296,16 @@ export function PosClient({
                         className="h-7 w-24 text-right font-mono-num text-xs"
                       />
                     </div>
-                    <p
-                      className={cn(
-                        "mt-1 text-right font-mono-num text-xs",
-                        item.qty * (item.unitPrice - item.avgCost) < 0 ? "text-danger" : "text-success"
-                      )}
-                    >
-                      Profit: {formatIDR(item.qty * (item.unitPrice - item.avgCost))}
-                    </p>
+                    {showProfit && (
+                      <p
+                        className={cn(
+                          "mt-1 text-right font-mono-num text-xs",
+                          item.qty * (item.unitPrice - item.avgCost) < 0 ? "text-danger" : "text-success"
+                        )}
+                      >
+                        Profit: {formatIDR(item.qty * (item.unitPrice - item.avgCost))}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -266,6 +321,7 @@ export function PosClient({
             </div>
 
             <div className="space-y-1 border-t border-border pt-3">
+              {showProfit && (
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center gap-1 text-xs text-muted">
                   Estimasi Profit
@@ -284,6 +340,7 @@ export function PosClient({
                   {formatIDR(totalProfit)}
                 </span>
               </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted">Total</span>
                 <span className="font-mono-num text-lg font-bold text-ink">{formatIDR(total)}</span>
@@ -338,6 +395,21 @@ export function PosClient({
           </CardContent>
         </Card>
       </div>
+
+      {/* Sticky total bar (phones): sits above the bottom nav */}
+      {cart.length > 0 && (
+        <div className="fixed inset-x-0 bottom-16 z-30 border-t border-border bg-white p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] md:hidden">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted">{itemCount} pcs</p>
+              <p className="font-mono-num text-lg font-bold leading-tight text-ink">{formatIDR(total)}</p>
+            </div>
+            <Button size="lg" disabled={!channelId || isPending} onClick={handleSave}>
+              {isPending ? "Menyimpan..." : "Simpan Order"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
