@@ -6,6 +6,7 @@ import {
   Users,
   Tag,
   Layers,
+  Boxes,
   Store,
   type LucideIcon,
 } from "lucide-react";
@@ -19,6 +20,7 @@ export type NavItem = {
 export const MAIN_NAV: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Penjualan", href: "/sales", icon: ShoppingBag },
+  { label: "Stok", href: "/stock", icon: Boxes },
   { label: "Arus Kas", href: "/cash-flow", icon: Landmark },
   { label: "Laporan", href: "/reports", icon: FileBarChart },
 ];

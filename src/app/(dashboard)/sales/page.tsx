@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { ShoppingBag, Radio, Upload, PencilLine, ShoppingCart } from "lucide-react";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { format, subDays, startOfMonth, endOfMonth } from "date-fns";
 import { db } from "@/db";
-import { salesEntries, channels, products } from "@/db/schema";
+import { salesEntries, salesReturns, channels, products } from "@/db/schema";
 import { Header } from "@/components/layout/header";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,9 @@ import { getCurrentRole } from "@/lib/auth";
 import { isValidMonth, monthRange, recentMonths } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { cancelSalesEntry } from "./actions";
+import { deleteSalesReturn } from "./returns/actions";
+import { ConfirmDeleteButton } from "@/components/shared/confirm-delete-button";
+import { Button } from "@/components/ui/button";
 import { ReturnSalesEntryDialog } from "./return-sales-entry-dialog";
 import { CustomDateRangeButton } from "./custom-date-range-button";
 
@@ -123,6 +126,42 @@ export default async function SalesPage({
       .orderBy(desc(salesEntries.entryDate)),
     db.select({ id: channels.id, name: channels.name }).from(channels).orderBy(channels.name),
   ]);
+
+  // Partial/imported returns (sales_returns) — shown on the Retur tab next to legacy whole-row returns.
+  const returnRows =
+    activeTab === "retur"
+      ? await db
+          .select({
+            id: salesReturns.id,
+            requestedAt: salesReturns.requestedAt,
+            qty: salesReturns.qty,
+            refundAmount: salesReturns.refundAmount,
+            hppPerUnit: salesReturns.hppPerUnit,
+            restock: salesReturns.restock,
+            status: salesReturns.status,
+            reason: salesReturns.reason,
+            source: salesReturns.source,
+            salesEntryId: salesReturns.salesEntryId,
+            channelName: channels.name,
+            productName: products.name,
+          })
+          .from(salesReturns)
+          .leftJoin(channels, eq(salesReturns.channelId, channels.id))
+          .leftJoin(products, eq(salesReturns.productId, products.id))
+          .where(
+            and(
+              eq(salesReturns.isDeleted, false),
+              channelFilter ? eq(salesReturns.channelId, channelFilter) : undefined,
+              dateRange
+                ? sql`${salesReturns.requestedAt} >= (${dateRange.start}::timestamp at time zone 'Asia/Jakarta')`
+                : undefined,
+              dateRange
+                ? sql`${salesReturns.requestedAt} < ((${dateRange.end}::date + 1)::timestamp at time zone 'Asia/Jakarta')`
+                : undefined
+            )
+          )
+          .orderBy(desc(salesReturns.requestedAt))
+      : [];
 
   // Group by channel so totals here can be matched against the same
   // channel groupings in Pencairan Dana and Laporan Lengkap → Per Channel.
@@ -342,6 +381,78 @@ export default async function SalesPage({
           </InfoTooltip>
         </div>
 
+        {activeTab === "retur" && (
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2 p-4 pb-0">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                Retur Tercatat
+                <InfoTooltip>
+                  Retur sebagian atau hasil impor TikTok. Rugi Retur = refund dikurangi HPP barang
+                  yang kembali ke stok, dihitung di bulan retur diminta.
+                </InfoTooltip>
+              </p>
+              <Button size="sm" variant="outline" asChild>
+                <Link href="/sales/returns/import">Impor Retur TikTok</Link>
+              </Button>
+            </div>
+            {returnRows.length === 0 ? (
+              <p className="p-4 text-sm text-muted">Belum ada retur tercatat pada filter ini.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Diminta</TableHead>
+                    <TableHead>Produk</TableHead>
+                    <TableHead>Channel</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Refund</TableHead>
+                    <TableHead>Rugi</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-12" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {returnRows.map((r) => {
+                    const loss = Number(r.refundAmount) - (r.restock ? Number(r.hppPerUnit) * r.qty : 0);
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell>{formatDate(r.requestedAt)}</TableCell>
+                        <TableCell>
+                          {r.salesEntryId ? (
+                            <Link href={`/sales/${r.salesEntryId}`} className="font-medium text-primary-600 hover:underline">
+                              {r.productName ?? "-"}
+                            </Link>
+                          ) : (
+                            <span className="font-medium">{r.productName ?? "-"}</span>
+                          )}
+                          {r.reason && <p className="mt-0.5 text-xs text-muted">{r.reason}</p>}
+                        </TableCell>
+                        <TableCell>{r.channelName ?? "-"}</TableCell>
+                        <TableCell className="font-mono-num">{r.qty}</TableCell>
+                        <TableCell className="font-mono-num">{formatIDR(Number(r.refundAmount))}</TableCell>
+                        <TableCell className="font-mono-num text-danger">
+                          {r.status === "rejected" ? "-" : formatIDR(loss)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={r.status === "completed" ? "success" : r.status === "processing" ? "warning" : "neutral"}>
+                            {r.status === "completed" ? "Selesai" : r.status === "processing" ? "Diproses" : "Ditolak"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {r.source === "manual" && (
+                            <ConfirmDeleteButton itemName="retur ini" onConfirm={deleteSalesReturn.bind(null, r.id)} />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+        )}
+
+        {(activeTab !== "retur" || rows.length > 0) && (
         <Card>
           {rows.length === 0 ? (
             <div className="p-6">
@@ -476,6 +587,7 @@ export default async function SalesPage({
             </Table>
           )}
         </Card>
+        )}
       </main>
     </>
   );

@@ -66,6 +66,11 @@ export function ReturnSalesEntryDialog({
             <Textarea id="note" name="note" placeholder="Alasan retur, kondisi barang, dst." />
           </div>
 
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input type="checkbox" name="restock" defaultChecked className="size-4" />
+            Barang kembali ke stok
+          </label>
+
           {error && <p className="text-sm text-danger">{error}</p>}
 
           <DialogFooter>

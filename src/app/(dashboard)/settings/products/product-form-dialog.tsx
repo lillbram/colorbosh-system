@@ -77,7 +77,7 @@ export function ProductFormDialog({ product }: { product?: Product }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="sku">SKU</Label>
-              <Input id="sku" name="sku" defaultValue={product?.sku ?? ""} />
+              <Input id="sku" name="sku" defaultValue={product?.sku ?? ""} required={isActive} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="category">Kategori</Label>

@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { db, withTransaction } from "@/db";
 import { salesEntries, salesLiveSessions, channels, payoutSalesLink } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
+import { todayJakarta } from "@/lib/period";
+import { recordSaleOut, restockWholeRowReturn, reverseSaleOut } from "@/lib/stock";
 import { withAudit } from "@/lib/audit";
 import {
   manualSaleSchema,
@@ -58,6 +60,11 @@ export async function createManualSale(formData: FormData) {
           })
           .returning({ id: salesEntries.id });
         newId = inserted.id;
+        await recordSaleOut(
+          tx,
+          [{ id: inserted.id, productId: parsed.data.productId, qty: parsed.data.qty, entryDate: parsed.data.entryDate }],
+          actorId
+        );
       }
     );
   } catch {
@@ -106,7 +113,7 @@ export async function createLiveSession(formData: FormData) {
 
         newSessionId = session.id;
 
-        await tx.insert(salesEntries).values(
+        const insertedEntries = await tx.insert(salesEntries).values(
           parsed.data.entries.map((e) => {
             const gross = e.qty * e.unitPrice;
             const fee = Math.round((gross * channel.feePct) / 100);
@@ -122,6 +129,11 @@ export async function createLiveSession(formData: FormData) {
               createdBy: actorId,
             };
           })
+        ).returning({ id: salesEntries.id, productId: salesEntries.productId, qty: salesEntries.qty });
+        await recordSaleOut(
+          tx,
+          insertedEntries.map((e) => ({ ...e, entryDate: parsed.data.sessionDate })),
+          actorId
         );
       }
     );
@@ -174,7 +186,14 @@ export async function importSalesCsv(formData: FormData) {
           })
           .returning({ id: salesEntries.id });
 
-        if (result.length > 0) insertedCount += 1;
+        if (result.length > 0) {
+          insertedCount += 1;
+          await recordSaleOut(
+            tx,
+            [{ id: result[0].id, productId: row.productId, qty: row.qty, entryDate: row.entryDate }],
+            actorId
+          );
+        }
       }
     });
   } catch {
@@ -201,7 +220,7 @@ export async function createPosOrder(formData: FormData) {
 
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = todayJakarta();
   const orderRef = `POS-${format(new Date(), "yyyyMMdd-HHmmss-SSS")}`;
 
   let firstEntryId = "";
@@ -230,9 +249,14 @@ export async function createPosOrder(formData: FormData) {
               };
             })
           )
-          .returning({ id: salesEntries.id });
+          .returning({ id: salesEntries.id, productId: salesEntries.productId, qty: salesEntries.qty });
 
         firstEntryId = inserted[0].id;
+        await recordSaleOut(
+          tx,
+          inserted.map((e) => ({ ...e, entryDate: today })),
+          actorId
+        );
       }
     );
   } catch {
@@ -264,6 +288,7 @@ export async function cancelSalesEntry(id: string) {
       async (tx) => {
         await assertNotReconciled(tx, [id]);
         await tx.update(salesEntries).set({ isDeleted: true }).where(eq(salesEntries.id, id));
+        await reverseSaleOut(tx, [id], format(new Date(), "yyyy-MM-dd"), actorId);
       }
     );
   } catch (err) {
@@ -303,6 +328,9 @@ export async function returnSalesEntry(id: string, formData: FormData) {
           .update(salesEntries)
           .set({ isReturned: true, returnedAt: new Date(), returnNote: note || null })
           .where(eq(salesEntries.id, id));
+        if (formData.get("restock") === "on") {
+          await restockWholeRowReturn(tx, id, format(new Date(), "yyyy-MM-dd"), actorId);
+        }
       }
     );
   } catch (err) {
@@ -330,6 +358,7 @@ export async function cancelPosOrder(orderRef: string) {
         firstEntryId = rows[0].id;
         await assertNotReconciled(tx, rows.map((r) => r.id));
         await tx.update(salesEntries).set({ isDeleted: true }).where(eq(salesEntries.orderRef, orderRef));
+        await reverseSaleOut(tx, rows.map((r) => r.id), format(new Date(), "yyyy-MM-dd"), actorId);
       }
     );
   } catch (err) {

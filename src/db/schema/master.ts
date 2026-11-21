@@ -113,3 +113,25 @@ export const productionCostComponents = pgTable("production_cost_components", {
   createdBy: uuid("created_by").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false),
 });
+
+// Legacy/alternate names that resolve to a canonical product (e.g. old
+// product names after a merge, or TikTok "Product Name" strings).
+export const productAliases = pgTable("product_aliases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  productId: uuid("product_id")
+    .notNull()
+    .references(() => products.id),
+  alias: text("alias").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// Single-row app settings (row id is always 1). Salary/reserve fields are
+// used from Phase 4; lowStockThreshold from Phase 2.
+export const settings = pgTable("settings", {
+  id: integer("id").primaryKey().default(1),
+  salaryPct: numeric("salary_pct", { precision: 5, scale: 2 }).notNull().default("1.00"),
+  returnReservePct: numeric("return_reserve_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  capitalReservePct: numeric("capital_reserve_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  lowStockThreshold: integer("low_stock_threshold").notNull().default(10),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { salesEntries, channels, products, users } from "@/db/schema";
+import { salesEntries, salesReturns, channels, products, users } from "@/db/schema";
 import { Header } from "@/components/layout/header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,9 @@ import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
 import { formatDate, formatIDR } from "@/lib/format";
 import { cancelSalesEntry } from "../actions";
 import { ReturnSalesEntryDialog } from "../return-sales-entry-dialog";
+import { PartialReturnDialog } from "../partial-return-dialog";
+import { ConfirmDeleteButton } from "@/components/shared/confirm-delete-button";
+import { deleteSalesReturn } from "../returns/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +59,15 @@ export default async function SalesEntryDetailPage({
 
   if (!entry) notFound();
 
+  const entryReturns = await db
+    .select()
+    .from(salesReturns)
+    .where(and(eq(salesReturns.salesEntryId, id), eq(salesReturns.isDeleted, false)));
+  const returnedQty = entryReturns
+    .filter((r) => r.status !== "rejected")
+    .reduce((sum, r) => sum + r.qty, 0);
+  const qtyLeft = entry.qty - returnedQty;
+
   const gross = Number(entry.grossAmount);
   const discount = Number(entry.discount ?? 0);
   const fee = Number(entry.platformFeeEst ?? 0);
@@ -80,6 +92,13 @@ export default async function SalesEntryDetailPage({
           </div>
           {!entry.isDeleted && !entry.isReturned && (
             <div className="flex gap-2">
+              {qtyLeft > 0 && (
+                <PartialReturnDialog
+                  entryId={entry.id}
+                  maxQty={qtyLeft}
+                  unitPrice={entry.qty > 0 ? Number(entry.grossAmount) / entry.qty : 0}
+                />
+              )}
               <ReturnSalesEntryDialog entryId={entry.id} />
               <ConfirmCancelButton
                 itemName="penjualan ini"
@@ -95,6 +114,34 @@ export default async function SalesEntryDetailPage({
               Ditandai retur{entry.returnedAt ? ` pada ${formatDate(entry.returnedAt)}` : ""}
             </p>
             {entry.returnNote && <p className="mt-1 text-sm text-muted">{entry.returnNote}</p>}
+          </Card>
+        )}
+
+        {entryReturns.length > 0 && (
+          <Card className="p-4">
+            <p className="text-sm font-semibold text-ink">
+              Retur sebagian ({returnedQty} dari {entry.qty} pcs)
+            </p>
+            <div className="mt-2 divide-y divide-border/70 text-sm">
+              {entryReturns.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-2 py-2">
+                  <span>
+                    {r.qty} pcs · {formatDate(r.requestedAt)} ·{" "}
+                    {r.status === "completed" ? "Selesai" : r.status === "processing" ? "Diproses" : "Ditolak"}
+                    {r.reason && <span className="text-muted"> — {r.reason}</span>}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="font-mono-num">{formatIDR(Number(r.refundAmount))}</span>
+                    {r.source === "manual" && (
+                      <ConfirmDeleteButton
+                        itemName="retur ini"
+                        onConfirm={deleteSalesReturn.bind(null, r.id)}
+                      />
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
           </Card>
         )}
 

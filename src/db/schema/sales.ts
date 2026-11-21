@@ -71,3 +71,31 @@ export const salesLiveSessions = pgTable("sales_live_sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   createdBy: uuid("created_by").references(() => users.id),
 });
+
+export const returnStatusEnum = pgEnum("return_status", ["processing", "completed", "rejected"]);
+export const returnSourceEnum = pgEnum("return_source", ["tiktok_import", "manual"]);
+
+// Partial/aggregate-safe returns. sales_entries.is_returned stays for legacy
+// whole-row returns; new returns live here. See CLAUDE.md §6.3.
+export const salesReturns = pgTable("sales_returns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  salesEntryId: uuid("sales_entry_id").references(() => salesEntries.id),
+  channelId: uuid("channel_id").references(() => channels.id),
+  productId: uuid("product_id").references(() => products.id),
+  externalReturnId: text("external_return_id").unique(),
+  externalOrderId: text("external_order_id"),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+  refundedAt: timestamp("refunded_at", { withTimezone: true }),
+  qty: integer("qty").notNull(),
+  refundAmount: numeric("refund_amount", { precision: 12, scale: 2 }).notNull(),
+  // Snapshot of products.hpp_target at the time the return is recorded.
+  hppPerUnit: numeric("hpp_per_unit", { precision: 12, scale: 2 }).notNull().default("0"),
+  restock: boolean("restock").notNull().default(true),
+  status: returnStatusEnum("status").notNull().default("processing"),
+  reason: text("reason"),
+  buyerNote: text("buyer_note"),
+  source: returnSourceEnum("source").notNull().default("manual"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  createdBy: uuid("created_by").references(() => users.id),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+});

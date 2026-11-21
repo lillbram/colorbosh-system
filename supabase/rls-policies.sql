@@ -29,7 +29,8 @@ begin
     'production_batches', 'production_batch_products', 'production_batch_cost_items', 'tailor_payments',
     'sales_entries', 'sales_live_sessions',
     'payout_expectations', 'payouts', 'payout_sales_link',
-    'cash_transactions'
+    'cash_transactions',
+    'sales_returns', 'stock_movements'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);
@@ -48,7 +49,7 @@ declare
 begin
   foreach t in array array[
     'suppliers', 'tailors', 'products', 'channels', 'categories', 'accounts', 'users',
-    'production_cost_components'
+    'production_cost_components', 'product_aliases', 'settings'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

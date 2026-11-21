@@ -6,3 +6,4 @@ export * from "./sales";
 export * from "./disbursement";
 export * from "./cashflow";
 export * from "./audit";
+export * from "./inventory";

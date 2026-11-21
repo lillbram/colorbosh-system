@@ -10,6 +10,9 @@ export const productSchema = z.object({
     .string()
     .default("true")
     .transform((v) => v === "true"),
+}).refine((d) => !d.isActive || !!d.sku?.trim(), {
+  message: "SKU wajib diisi untuk produk aktif",
+  path: ["sku"],
 });
 
 export type ProductInput = z.infer<typeof productSchema>;

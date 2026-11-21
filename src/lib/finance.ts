@@ -1,7 +1,14 @@
-import { and, eq, gte, lte, notInArray, or, isNull } from "drizzle-orm";
+import { and, eq, gte, lte, ne, notInArray, or, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { cashTransactions, categories, channels, products, salesEntries } from "@/db/schema";
-import { computePnL, type CashOutRow, type SaleRow } from "@/lib/finance-calc";
+import {
+  cashTransactions,
+  categories,
+  channels,
+  products,
+  salesEntries,
+  salesReturns,
+} from "@/db/schema";
+import { computePnL, returnLoss, type CashOutRow, type ReturnRow, type SaleRow } from "@/lib/finance-calc";
 
 async function loadSales(start: string, end: string): Promise<SaleRow[]> {
   const rows = await db
@@ -55,17 +62,46 @@ async function loadCashOut(start: string, end: string): Promise<CashOutRow[]> {
   return rows.map((r) => ({ amount: Number(r.amount), categoryName: r.categoryName }));
 }
 
+/**
+ * Returns are attributed to the month they were requested (Asia/Jakarta),
+ * matching the owner's spreadsheet. Rejected returns don't count.
+ */
+async function loadReturns(start: string, end: string): Promise<ReturnRow[]> {
+  const rows = await db
+    .select({
+      refundAmount: salesReturns.refundAmount,
+      qty: salesReturns.qty,
+      hppPerUnit: salesReturns.hppPerUnit,
+      restock: salesReturns.restock,
+    })
+    .from(salesReturns)
+    .where(
+      and(
+        eq(salesReturns.isDeleted, false),
+        ne(salesReturns.status, "rejected"),
+        sql`${salesReturns.requestedAt} >= (${start}::timestamp at time zone 'Asia/Jakarta')`,
+        sql`${salesReturns.requestedAt} < ((${end}::date + 1)::timestamp at time zone 'Asia/Jakarta')`
+      )
+    );
+  return rows.map((r) => ({
+    refundAmount: Number(r.refundAmount),
+    qty: r.qty,
+    hppPerUnit: Number(r.hppPerUnit),
+    restock: r.restock,
+  }));
+}
+
 export async function getPnL(start: string, end: string) {
-  const [sales, cashOut, productList, channelList] = await Promise.all([
+  const [sales, cashOut, returns, productList, channelList] = await Promise.all([
     loadSales(start, end),
     loadCashOut(start, end),
+    loadReturns(start, end),
     db.select({ id: products.id, hppTarget: products.hppTarget }).from(products),
     db.select({ id: channels.id, name: channels.name }).from(channels),
   ]);
 
   const hppById = new Map(productList.map((p) => [p.id, Number(p.hppTarget ?? 0)]));
-  // TODO(Phase 2): pass returnLoss from sales_returns once that table exists.
-  const pnl = computePnL({ sales, hppById, cashOut, returnLoss: 0 });
+  const pnl = computePnL({ sales, hppById, cashOut, returnLoss: returnLoss(returns) });
 
   const channelNameById = new Map(channelList.map((c) => [c.id, c.name]));
   const byChannel = new Map<string, number>();
