@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { channels } from "@/db/schema";
@@ -18,6 +19,7 @@ function toDbValues(data: ReturnType<typeof channelSchema.parse>) {
 }
 
 export async function createChannel(formData: FormData) {
+  await requireRole("owner");
   const parsed = channelSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
@@ -46,6 +48,7 @@ export async function createChannel(formData: FormData) {
 }
 
 export async function updateChannel(id: string, formData: FormData) {
+  await requireRole("owner");
   const parsed = channelSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };

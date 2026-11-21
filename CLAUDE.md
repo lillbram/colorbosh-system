@@ -12,6 +12,9 @@
 > - **Laporan Lengkap** kehilangan tab **Per Penjahit** dan **Aging Payout**, dan tab **P&L** kehilangan baris Bayar Supplier/Bayar Penjahit (lihat §6.6). **Laporan Sederhana** kehilangan StatCard **Uang Belum Cair**.
 > - **Dashboard** kehilangan card "Sorotan" (isinya dulu: channel belum cair, termin jatuh tempo, PO terlambat — semua sumbernya hilang) diganti card **"Hari Ini"** (total transaksi, total penjualan, channel aktif hari itu).
 > - **Cron `daily-reminder` dan `vercel.json` crons dihapus total** — isinya dulu 100% tentang PO/termin/batch/payout yang overdue, tidak ada lagi yang perlu diingatkan di model POS ini. `getAttentionItems()` di `src/lib/reports.ts` sengaja dipertahankan sebagai fungsi yang selalu return `[]` (bukan dihapus) supaya `NotificationBell` di header tidak perlu kode khusus, dan supaya ada tempat jelas kalau nanti butuh alert baru (mis. saldo kas negatif).
+> - **Phase 1 dev spec (21 Nov 2026, `docs/COLORBOSH_DEV_SPEC.md`):** brand sekarang **Colorbosh** (bukan "Cardigan Biz"). Semua angka laba lewat satu modul: `src/lib/finance-calc.ts` (rumus murni, ada unit test `npm test`) + `src/lib/finance.ts` (loader DB, `getPnL()`) — Dashboard, Laporan Sederhana, Laporan Lengkap P&L memakai fungsi yang sama. **Laba Bersih = Penjualan Bersih − HPP − Rugi Retur − Operasional** (menggantikan "Laba Estimasi" lama yang tidak mengurangi HPP). Rugi Retur masih 0 sampai tabel `sales_returns` ada (Phase 2). Operasional = semua uang keluar di luar kategori Gaji/Bagi Hasil/Prive/Pembayaran Penjahit/Bahan dan di luar `related_type` po_payment/tailor_payment. Kategori sistem baru di-seed lewat `scripts/seed-categories.ts` (idempotent). `scripts/verify-phase1.ts` mencetak P&L Okt/Nov 2026 untuk dicocokkan dengan spec §0 (Okt: Laba Kotor 7.732.402 ✔).
+> - **Role guard:** `requireRole("owner")` / `getCurrentRole()` di `src/lib/auth.ts`. Semua `/settings/*` (halaman + server action) dan Laporan Lengkap owner-only; Admin tidak melihat profit/HPP (Dashboard, Laporan Sederhana, kolom Profit/HPP di Penjualan) dan menu Data Master disembunyikan (`RoleProvider` di `(dashboard)/layout.tsx`). Ini satu-satunya penjaga karena Drizzle konek langsung (RLS tidak berlaku).
+> - **Periode:** `src/lib/period.ts` (zona Asia/Jakarta). Picker bulan `?month=YYYY-MM` di Dashboard, `/sales`, `/reports`. Perbandingan "vs bulan lalu" memakai rentang hari yang sama (`previousPeriod()`). `getSaldoKas()` mengembalikan `{ saldo, lastTxnDate }`; kartu Saldo Kas jadi kuning kalau terakhir dicatat > 7 hari.
 > - Kalau nanti fitur produksi/pengadaan/pencairan dana diaktifkan lagi: kode lama masih ada di git history (lihat commit yang menghapusnya), dan skema DB-nya tidak pernah hilang — jadi ini keputusan yang reversibel, bukan penghapusan permanen.
 
 ## 1. Konteks Bisnis
@@ -676,20 +679,21 @@ Aktifkan RLS di semua tabel. Kebijakan default:
 > **Update (REVAMP, lihat §1):** `getProfitEstimasi()` dan `getPerProductReport()` sekarang memakai `products.hpp_target` (HPP manual per produk) sebagai basis biaya, bukan lagi rata-rata tertimbang dari batch produksi selesai (`getProductCostBasis()` sudah dihapus karena Batch Produksi dihapus dari UI). Tab Per Produk tidak lagi punya kolom Stok (butuh data qty aktual dari Batch Produksi yang sudah tidak ada). Laporan Sederhana tidak lagi punya StatCard Uang Belum Cair, dan Laporan Lengkap tidak lagi punya tab Per Penjahit & Aging Payout (semua butuh Pencairan Dana/Produksi yang sudah dihapus, lihat §6.2 & §6.4).
 
 **Sederhana** (`/reports/simple`):
-- 4 StatCard: Saldo Kas, Penjualan Bulan Ini, Profit Estimasi, Top Produk
+- StatCard: Saldo Kas (+ catatan "Terakhir dicatat"), Total Penjualan, Total Transaksi, Laba Bersih (owner saja), Top Produk
 - 1 line chart (30 hari, per channel)
 - Tombol "Export PDF"
 
-**Profit Estimasi — margin sesungguhnya, bukan proxy cash-flow:**
-- Formula: `Revenue (net_expected penjualan aktif+non-retur dalam periode) − COGS (qty terjual × HPP produk itu, dari products.hpp_target) − Beban Operasional (cash_transactions related_type='manual', direction=out, dalam periode)`.
-- **Kenapa bukan sekadar uang masuk dikurangi uang keluar:** itu arus kas, bukan profit akuntansi — kalau nanti Pemesanan Kain/Produksi diaktifkan lagi, bayar tagihan besar bulan ini untuk barang yang baru laku bulan depan bisa bikin "profit" bulan ini kelihatan rugi padahal itu investasi stok, bukan kerugian sungguhan. Prinsip ini dipertahankan meski basis HPP-nya sekarang manual, bukan dari batch.
+**Laba Bersih — margin sesungguhnya, bukan proxy cash-flow** (sebelumnya "Profit Estimasi"/"Laba Estimasi"):
+- Formula (`computePnL()` di `src/lib/finance-calc.ts`): `Penjualan Bersih (net_expected penjualan aktif+non-retur) − HPP (qty × products.hpp_target) − Rugi Retur − Operasional`. Laba Kotor = Penjualan Bersih − HPP.
+- Operasional = uang keluar di Arus Kas, di luar kategori Gaji, Bagi Hasil, Prive, Pembayaran Penjahit, Bahan (biaya produksi/bagi hasil bukan operasional) dan di luar `related_type` po_payment/tailor_payment (data lama).
+- **Kenapa bukan sekadar uang masuk dikurangi uang keluar:** itu arus kas, bukan profit akuntansi — bayar bahan besar bulan ini untuk barang yang baru laku bulan depan bisa bikin "profit" kelihatan rugi padahal itu investasi stok.
 - `getPenjualanPeriode()` (omset) dan semua fungsi laporan lain yang menjumlahkan `sales_entries` dikecualikan dari retur (`is_returned = false`).
 
 **Lengkap** (`/reports/detailed`):
 - Tabs: P&L | Per Channel | Per Produk | Cash Flow
 - Filter periode (7/30/90 hari, MTD, LTM, custom)
 - Export Excel per tab (pakai `xlsx` library)
-- **Tab P&L**: Total Penjualan (klik untuk rincian per channel) → Diskon → Fee Platform Estimasi → Penjualan Bersih → Operasional → Laba Estimasi. Laba Estimasi = Penjualan Bersih − Operasional saja (tidak dikurangi HPP) — beda dari Profit Estimasi di Laporan Sederhana yang juga mengurangi HPP, dijelaskan lewat `InfoTooltip` di tab ini.
+- **Tab P&L**: Total Penjualan (klik untuk rincian per channel) → Diskon → Fee Platform Estimasi → Penjualan Bersih → HPP → Laba Kotor → Rugi Retur → Operasional → Laba Bersih. Angka akhir sama dengan Dashboard & Laporan Sederhana (satu modul `finance.ts`).
 - **Tab Per Produk** menampilkan Qty/Bruto/Bersih (scoped ke periode filter), **HPP** (dari `products.hpp_target`, sama untuk periode manapun sampai diubah manual), dan **Profit** (`bersih periode − HPP × qty terjual periode`).
 
 ---

@@ -1,3 +1,4 @@
+import { requireRole } from "@/lib/auth";
 import { Layers } from "lucide-react";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -22,6 +23,7 @@ import { deleteProduct } from "./actions";
 export const dynamic = "force-dynamic";
 
 export default async function ProductsPage() {
+  await requireRole("owner");
   const data = await db
     .select()
     .from(products)

@@ -1,6 +1,7 @@
 import { and, eq, gte, lte } from "drizzle-orm";
 import { format, startOfMonth, subMonths } from "date-fns";
 import { db } from "@/db";
+import { getPnL } from "@/lib/finance";
 import { accounts, cashTransactions, salesEntries, products, channels, categories } from "@/db/schema";
 
 const CHANNEL_COLORS: Record<string, string> = {
@@ -10,11 +11,15 @@ const CHANNEL_COLORS: Record<string, string> = {
   other: "#6B7280",
 };
 
-export async function getSaldoKas(): Promise<number> {
+export async function getSaldoKas(): Promise<{ saldo: number; lastTxnDate: string | null }> {
   const [accountList, txns] = await Promise.all([
     db.select({ openingBalance: accounts.openingBalance }).from(accounts),
     db
-      .select({ direction: cashTransactions.direction, amount: cashTransactions.amount })
+      .select({
+        direction: cashTransactions.direction,
+        amount: cashTransactions.amount,
+        txnDate: cashTransactions.txnDate,
+      })
       .from(cashTransactions)
       .where(eq(cashTransactions.isDeleted, false)),
   ]);
@@ -24,7 +29,11 @@ export async function getSaldoKas(): Promise<number> {
     (sum, t) => sum + (t.direction === "in" ? 1 : -1) * Number(t.amount),
     0
   );
-  return openingTotal + netMovement;
+  const lastTxnDate = txns.reduce<string | null>(
+    (latest, t) => (!latest || t.txnDate > latest ? t.txnDate : latest),
+    null
+  );
+  return { saldo: openingTotal + netMovement, lastTxnDate };
 }
 
 export async function getPenjualanPeriode(start: string, end: string): Promise<number> {
@@ -43,56 +52,11 @@ export async function getPenjualanPeriode(start: string, end: string): Promise<n
 }
 
 /**
- * Real margin-based profit: revenue recognized when sold minus that
- * product's HPP (set manually per product in Pengaturan > Produk) minus
- * operational expenses — NOT a cash-flow proxy. Previously this just summed
- * cash in/out for the period, which conflates "profit" with "cash movement".
- * See CLAUDE.md §6.6.
+ * Laba Bersih for the period — delegates to finance.ts so Dashboard,
+ * Laporan and Penjualan all show the same number. See CLAUDE.md §6.6.
  */
 export async function getProfitEstimasi(start: string, end: string): Promise<number> {
-  const [salesRows, productList, opexRows] = await Promise.all([
-    db
-      .select({
-        productId: salesEntries.productId,
-        qty: salesEntries.qty,
-        netExpected: salesEntries.netExpected,
-      })
-      .from(salesEntries)
-      .where(
-        and(
-          eq(salesEntries.isDeleted, false),
-          eq(salesEntries.isReturned, false),
-          gte(salesEntries.entryDate, start),
-          lte(salesEntries.entryDate, end)
-        )
-      ),
-    db.select({ id: products.id, hppTarget: products.hppTarget }).from(products),
-    db
-      .select({ amount: cashTransactions.amount })
-      .from(cashTransactions)
-      .where(
-        and(
-          eq(cashTransactions.isDeleted, false),
-          eq(cashTransactions.relatedType, "manual"),
-          eq(cashTransactions.direction, "out"),
-          gte(cashTransactions.txnDate, start),
-          lte(cashTransactions.txnDate, end)
-        )
-      ),
-  ]);
-
-  const hppById = new Map(productList.map((p) => [p.id, Number(p.hppTarget ?? 0)]));
-
-  let revenue = 0;
-  let cogs = 0;
-  for (const r of salesRows) {
-    revenue += Number(r.netExpected);
-    const hpp = r.productId ? (hppById.get(r.productId) ?? 0) : 0;
-    cogs += hpp * r.qty;
-  }
-  const opex = opexRows.reduce((sum, r) => sum + Number(r.amount), 0);
-
-  return revenue - cogs - opex;
+  return (await getPnL(start, end)).labaBersih;
 }
 
 export async function getTopProduk(start: string, end: string, limit = 5) {
@@ -270,69 +234,7 @@ export async function getTodaySummary() {
 }
 
 export async function getPnLSummary(start: string, end: string) {
-  const [salesRows, channelList, opexRows] = await Promise.all([
-    db
-      .select({
-        channelId: salesEntries.channelId,
-        grossAmount: salesEntries.grossAmount,
-        discount: salesEntries.discount,
-        platformFeeEst: salesEntries.platformFeeEst,
-        netExpected: salesEntries.netExpected,
-      })
-      .from(salesEntries)
-      .where(
-        and(
-          eq(salesEntries.isDeleted, false),
-          eq(salesEntries.isReturned, false),
-          gte(salesEntries.entryDate, start),
-          lte(salesEntries.entryDate, end)
-        )
-      ),
-    db.select({ id: channels.id, name: channels.name }).from(channels),
-    db
-      .select({ amount: cashTransactions.amount, categoryId: cashTransactions.categoryId })
-      .from(cashTransactions)
-      .where(
-        and(
-          eq(cashTransactions.isDeleted, false),
-          eq(cashTransactions.direction, "out"),
-          eq(cashTransactions.relatedType, "manual"),
-          gte(cashTransactions.txnDate, start),
-          lte(cashTransactions.txnDate, end)
-        )
-      ),
-  ]);
-
-  const totalPenjualan = salesRows.reduce((sum, r) => sum + Number(r.grossAmount), 0);
-  const totalDiskon = salesRows.reduce((sum, r) => sum + Number(r.discount ?? 0), 0);
-  const totalFeePlatform = salesRows.reduce((sum, r) => sum + Number(r.platformFeeEst ?? 0), 0);
-  const totalBersih = salesRows.reduce((sum, r) => sum + Number(r.netExpected), 0);
-  const totalOperasional = opexRows.reduce((sum, r) => sum + Number(r.amount), 0);
-  const labaEstimasi = totalBersih - totalOperasional;
-
-  const channelNameById = new Map(channelList.map((c) => [c.id, c.name]));
-  const byChannel = new Map<string, number>();
-  for (const r of salesRows) {
-    const name = (r.channelId ? channelNameById.get(r.channelId) : null) ?? "Tanpa Channel";
-    byChannel.set(name, (byChannel.get(name) ?? 0) + Number(r.grossAmount));
-  }
-  const penjualanPerChannel = Array.from(byChannel.entries())
-    .map(([name, gross]) => ({
-      name,
-      gross,
-      pct: totalPenjualan > 0 ? (gross / totalPenjualan) * 100 : 0,
-    }))
-    .sort((a, b) => b.gross - a.gross);
-
-  return {
-    totalPenjualan,
-    penjualanPerChannel,
-    totalDiskon,
-    totalFeePlatform,
-    totalBersih,
-    totalOperasional,
-    labaEstimasi,
-  };
+  return getPnL(start, end);
 }
 
 export async function getPerChannelReport(start: string, end: string) {

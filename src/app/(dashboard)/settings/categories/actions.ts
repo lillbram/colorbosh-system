@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { categories } from "@/db/schema";
@@ -8,6 +9,7 @@ import { withAudit } from "@/lib/audit";
 import { categorySchema } from "@/lib/validators/category";
 
 export async function createCategory(formData: FormData) {
+  await requireRole("owner");
   const parsed = categorySchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
@@ -33,6 +35,7 @@ export async function createCategory(formData: FormData) {
 }
 
 export async function deleteCategory(id: string) {
+  await requireRole("owner");
   const actorId = await getCurrentUserId();
 
   try {

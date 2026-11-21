@@ -14,8 +14,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Cardigan Business Suite",
-  description: "Kelola pengadaan, produksi, penjualan, dan kas bisnis kardigan.",
+  title: "Colorbosh",
+  description: "Kelola penjualan, stok, dan kas bisnis Colorbosh.",
+  icons: { icon: "/logo-placeholder.svg" },
 };
 
 export default function RootLayout({

@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { products } from "@/db/schema";
@@ -19,6 +20,7 @@ function toDbValues(data: ReturnType<typeof productSchema.parse>) {
 }
 
 export async function createProduct(formData: FormData) {
+  await requireRole("owner");
   const parsed = productSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
@@ -47,6 +49,7 @@ export async function createProduct(formData: FormData) {
 }
 
 export async function updateProduct(id: string, formData: FormData) {
+  await requireRole("owner");
   const parsed = productSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
@@ -73,6 +76,7 @@ export async function updateProduct(id: string, formData: FormData) {
 }
 
 export async function deleteProduct(id: string) {
+  await requireRole("owner");
   const actorId = await getCurrentUserId();
 
   try {

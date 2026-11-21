@@ -102,11 +102,12 @@ export function ReportTabs({
         <Card>
           <div className="flex items-center justify-between gap-2 p-4 pb-0">
             <InfoTooltip>
-              Dihitung dari data periode filter di atas: Total Penjualan/Diskon/Fee Platform dari
-              semua penjualan aktif (bukan dibatalkan/retur); Operasional dari transaksi kas
-              manual (bukan otomatis). Laba Estimasi = Penjualan Bersih dikurangi Operasional —
-              ini beda dari Profit Estimasi di Laporan Sederhana yang juga mengurangi HPP produk
-              terjual. Klik baris &ldquo;Total Penjualan&rdquo; untuk lihat rincian per channel.
+              Dihitung dari data periode filter di atas. Penjualan dari semua penjualan aktif
+              (bukan dibatalkan/retur). Laba Kotor = Penjualan Bersih dikurangi HPP produk
+              terjual. Laba Bersih = Laba Kotor dikurangi Rugi Retur dan Operasional (uang keluar
+              di Arus Kas, di luar Gaji, Bagi Hasil, Prive, Pembayaran Penjahit, dan Bahan).
+              Angkanya sama dengan Dashboard dan Laporan Sederhana. Klik baris
+              &ldquo;Total Penjualan&rdquo; untuk lihat rincian per channel.
             </InfoTooltip>
             <ExportButton
               filename="laba-rugi"
@@ -119,8 +120,11 @@ export function ReportTabs({
                 { Item: "Diskon", Nominal: -pnl.totalDiskon },
                 { Item: "Fee Platform Estimasi", Nominal: -pnl.totalFeePlatform },
                 { Item: "Penjualan Bersih", Nominal: pnl.totalBersih },
+                { Item: "HPP", Nominal: -pnl.hpp },
+                { Item: "Laba Kotor", Nominal: pnl.labaKotor },
+                { Item: "Rugi Retur", Nominal: -pnl.rugiRetur },
                 { Item: "Operasional", Nominal: -pnl.totalOperasional },
-                { Item: "Laba Estimasi", Nominal: pnl.labaEstimasi },
+                { Item: "Laba Bersih", Nominal: pnl.labaBersih },
               ]}
             />
           </div>
@@ -146,17 +150,35 @@ export function ReportTabs({
                 </TableCell>
               </TableRow>
               <TableRow>
+                <TableCell className="text-muted">HPP</TableCell>
+                <TableCell className="text-right font-mono-num text-danger">
+                  -{formatIDR(pnl.hpp)}
+                </TableCell>
+              </TableRow>
+              <TableRow className="border-t-2 border-border">
+                <TableCell className="font-medium">Laba Kotor</TableCell>
+                <TableCell className="text-right font-mono-num font-medium">
+                  {formatIDR(pnl.labaKotor)}
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="text-muted">Rugi Retur</TableCell>
+                <TableCell className="text-right font-mono-num text-danger">
+                  -{formatIDR(pnl.rugiRetur)}
+                </TableCell>
+              </TableRow>
+              <TableRow>
                 <TableCell className="text-muted">Operasional</TableCell>
                 <TableCell className="text-right font-mono-num text-danger">
                   -{formatIDR(pnl.totalOperasional)}
                 </TableCell>
               </TableRow>
               <TableRow className="border-t-2 border-border">
-                <TableCell className="font-semibold">Laba Estimasi</TableCell>
+                <TableCell className="font-semibold">Laba Bersih</TableCell>
                 <TableCell
-                  className={`text-right font-mono-num text-base font-bold ${pnl.labaEstimasi >= 0 ? "text-success" : "text-danger"}`}
+                  className={`text-right font-mono-num text-base font-bold ${pnl.labaBersih >= 0 ? "text-success" : "text-danger"}`}
                 >
-                  {formatIDR(pnl.labaEstimasi)}
+                  {formatIDR(pnl.labaBersih)}
                 </TableCell>
               </TableRow>
             </TableBody>

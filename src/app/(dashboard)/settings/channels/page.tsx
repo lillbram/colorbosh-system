@@ -1,3 +1,4 @@
+import { requireRole } from "@/lib/auth";
 import { Store } from "lucide-react";
 import { db } from "@/db";
 import { channels } from "@/db/schema";
@@ -17,6 +18,7 @@ import { ChannelFormDialog } from "./channel-form-dialog";
 export const dynamic = "force-dynamic";
 
 export default async function ChannelsPage() {
+  await requireRole("owner");
   const data = await db.select().from(channels).orderBy(channels.name);
 
   return (

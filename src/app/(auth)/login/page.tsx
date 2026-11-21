@@ -22,7 +22,7 @@ export default async function LoginPage() {
         <div className="mb-2 flex size-10 items-center justify-center rounded-full bg-primary-500 text-sm font-semibold text-white">
           C
         </div>
-        <h1 className="text-h2 text-ink">Masuk ke Cardigan Biz</h1>
+        <h1 className="text-h2 text-ink">Masuk ke Colorbosh</h1>
         <p className="text-sm text-muted">
           Kelola pengadaan, produksi, penjualan, dan kas dalam satu tempat.
         </p>

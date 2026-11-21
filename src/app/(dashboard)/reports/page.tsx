@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Wallet, ShoppingBag, Receipt, TrendingUp, Star } from "lucide-react";
-import { endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
+import { endOfMonth, format, parseISO, startOfMonth, subDays, subMonths } from "date-fns";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/stats/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChannelTrendChart } from "@/components/dashboard/channel-trend-chart";
 import { ExportPdfButton } from "@/components/shared/export-pdf-button";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
-import { formatDate, formatDateLong, formatIDR } from "@/lib/format";
+import { MonthPicker } from "@/components/shared/month-picker";
+import { formatDate, formatDateLong, formatIDR, lastRecordedNote } from "@/lib/format";
+import { getCurrentRole } from "@/lib/auth";
+import { isValidMonth, monthLabel, monthRange, recentMonths, todayJakarta } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import {
   getSaldoKas,
@@ -45,8 +48,12 @@ const SIMPLE_PERIODS = [
   { value: "mtd", label: "Bulan Ini" },
 ];
 
-function resolvePeriod(period: string) {
-  const now = new Date();
+function resolvePeriod(period: string, month?: string) {
+  if (isValidMonth(month)) {
+    const r = monthRange(month);
+    return { start: parseISO(r.start), end: parseISO(r.end) };
+  }
+  const now = parseISO(todayJakarta());
   if (period === "today") return { start: now, end: now };
   if (period === "mtd") return { start: startOfMonth(now), end: endOfMonth(now) };
   if (period === "ltm") return { start: subMonths(now, 12), end: now };
@@ -54,7 +61,8 @@ function resolvePeriod(period: string) {
   return { start: subDays(now, days - 1), end: now };
 }
 
-function periodLabel(period: string, start: Date, end: Date) {
+function periodLabel(period: string, start: Date, end: Date, month?: string) {
+  if (isValidMonth(month)) return `${monthLabel(month)} — ${formatDate(start)} s/d ${formatDate(end)}`;
   if (period === "today") return `Hari ini, ${formatDateLong(end)}`;
   if (period === "mtd") return `Bulan ini — ${formatDate(start)} s/d ${formatDate(end)}`;
   return `${formatDate(start)} s/d ${formatDate(end)}`;
@@ -73,22 +81,30 @@ function ReportSkeleton() {
   );
 }
 
-async function SimpleReportContent({ period }: { period: string }) {
-  const { start, end } = resolvePeriod(period);
+async function SimpleReportContent({
+  period,
+  month,
+  isOwner,
+}: {
+  period: string;
+  month?: string;
+  isOwner: boolean;
+}) {
+  const { start, end } = resolvePeriod(period, month);
   const startStr = format(start, "yyyy-MM-dd");
   const endStr = format(end, "yyyy-MM-dd");
-  const trendStart = format(subDays(new Date(), 29), "yyyy-MM-dd");
-  const trendEnd = format(new Date(), "yyyy-MM-dd");
+  const trendEnd = todayJakarta();
+  const trendStart = format(subDays(parseISO(trendEnd), 29), "yyyy-MM-dd");
 
   const [saldoKas, penjualanPeriode, profitEstimasi, topProdukList, trend, perChannel, pnl] =
     await Promise.all([
       getSaldoKas(),
       getPenjualanPeriode(startStr, endStr),
-      getProfitEstimasi(startStr, endStr),
+      isOwner ? getProfitEstimasi(startStr, endStr) : Promise.resolve(0),
       getTopProduk(startStr, endStr, 5),
       getRevenueTrendByChannel(trendStart, trendEnd),
       getPerChannelReport(startStr, endStr),
-      getPnLSummary(startStr, endStr),
+      isOwner ? getPnLSummary(startStr, endStr) : Promise.resolve(null),
     ]);
 
   const topProductLabel = topProdukList[0]?.name ?? "-";
@@ -98,7 +114,7 @@ async function SimpleReportContent({ period }: { period: string }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">{periodLabel(period, start, end)}</p>
+        <p className="text-sm text-muted">{periodLabel(period, start, end, month)}</p>
         <div className="no-print">
           <ExportPdfButton />
         </div>
@@ -109,8 +125,9 @@ async function SimpleReportContent({ period }: { period: string }) {
           <StatCard
             icon={Wallet}
             label="Saldo Kas"
-            value={saldoKas}
+            value={saldoKas.saldo}
             isMoney
+            note={lastRecordedNote(saldoKas.lastTxnDate, todayJakarta())}
             info="Saldo awal semua akun (bank/tunai/e-wallet) ditambah semua Uang Masuk, dikurangi semua Uang Keluar yang sudah tercatat di Arus Kas."
           />
           <StatCard
@@ -126,13 +143,15 @@ async function SimpleReportContent({ period }: { period: string }) {
             value={totalTransaksi}
             info="Jumlah baris penjualan aktif pada periode terpilih, dari semua channel."
           />
+          {isOwner && (
           <StatCard
             icon={TrendingUp}
-            label="Profit Estimasi"
+            label="Laba Bersih"
             value={profitEstimasi}
             isMoney
-            info="Penjualan Bersih pada periode terpilih dikurangi HPP produk yang terjual (diatur per produk di Pengaturan > Produk) dikurangi pengeluaran operasional (listrik, sewa, gaji, dst). Bukan sekadar uang masuk dikurangi uang keluar."
+            info="Penjualan Bersih dikurangi HPP produk yang terjual, rugi retur, dan biaya operasional pada periode terpilih. Angka yang sama dengan baris Laba Bersih di Laporan Lengkap → P&L. Bukan sekadar uang masuk dikurangi uang keluar."
           />
+          )}
           <StatCard
             icon={Star}
             label="Top Produk"
@@ -215,88 +234,114 @@ async function SimpleReportContent({ period }: { period: string }) {
           </Card>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
-              Ringkasan Laba Rugi
-              <InfoTooltip>
-                Ringkasan cepat untuk periode terpilih — lihat tab P&amp;L di Laporan Lengkap untuk
-                rincian per channel dan export.
-              </InfoTooltip>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y divide-border/70 text-sm">
-              <div className="flex justify-between py-2">
-                <span className="text-muted">Total Penjualan</span>
-                <span className="font-mono-num">{formatIDR(pnl.totalPenjualan)}</span>
+        {pnl && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-1.5">
+                Ringkasan Laba Rugi
+                <InfoTooltip>
+                  Ringkasan cepat untuk periode terpilih — lihat tab P&amp;L di Laporan Lengkap untuk
+                  rincian per channel dan export.
+                </InfoTooltip>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y divide-border/70 text-sm">
+                <div className="flex justify-between py-2">
+                  <span className="text-muted">Total Penjualan</span>
+                  <span className="font-mono-num">{formatIDR(pnl.totalPenjualan)}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-muted">Diskon</span>
+                  <span className="font-mono-num text-danger">-{formatIDR(pnl.totalDiskon)}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-muted">Fee Platform Estimasi</span>
+                  <span className="font-mono-num text-danger">-{formatIDR(pnl.totalFeePlatform)}</span>
+                </div>
+                <div className="flex justify-between py-2 font-medium">
+                  <span>Penjualan Bersih</span>
+                  <span className="font-mono-num">{formatIDR(pnl.totalBersih)}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-muted">HPP</span>
+                  <span className="font-mono-num text-danger">-{formatIDR(pnl.hpp)}</span>
+                </div>
+                <div className="flex justify-between py-2 font-medium">
+                  <span>Laba Kotor</span>
+                  <span className="font-mono-num">{formatIDR(pnl.labaKotor)}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-muted">Rugi Retur</span>
+                  <span className="font-mono-num text-danger">-{formatIDR(pnl.rugiRetur)}</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-muted">Operasional</span>
+                  <span className="font-mono-num text-danger">-{formatIDR(pnl.totalOperasional)}</span>
+                </div>
+                <div className="flex justify-between pt-3 text-base font-bold">
+                  <span>Laba Bersih</span>
+                  <span
+                    className={cn("font-mono-num", pnl.labaBersih >= 0 ? "text-success" : "text-danger")}
+                  >
+                    {formatIDR(pnl.labaBersih)}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between py-2">
-                <span className="text-muted">Diskon</span>
-                <span className="font-mono-num text-danger">-{formatIDR(pnl.totalDiskon)}</span>
-              </div>
-              <div className="flex justify-between py-2">
-                <span className="text-muted">Fee Platform Estimasi</span>
-                <span className="font-mono-num text-danger">
-                  -{formatIDR(pnl.totalFeePlatform)}
-                </span>
-              </div>
-              <div className="flex justify-between py-2 font-medium">
-                <span>Penjualan Bersih</span>
-                <span className="font-mono-num">{formatIDR(pnl.totalBersih)}</span>
-              </div>
-              <div className="flex justify-between py-2">
-                <span className="text-muted">Operasional</span>
-                <span className="font-mono-num text-danger">
-                  -{formatIDR(pnl.totalOperasional)}
-                </span>
-              </div>
-              <div className="flex justify-between pt-3 text-base font-bold">
-                <span>Laba Estimasi</span>
-                <span
-                  className={cn(
-                    "font-mono-num",
-                    pnl.labaEstimasi >= 0 ? "text-success" : "text-danger"
-                  )}
-                >
-                  {formatIDR(pnl.labaEstimasi)}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
 }
 
-function SimpleReport({ period }: { period: string }) {
+function SimpleReport({
+  period,
+  month,
+  isOwner,
+}: {
+  period: string;
+  month?: string;
+  isOwner: boolean;
+}) {
+  const activeMonth = isValidMonth(month) ? month : null;
   return (
     <div className="space-y-4">
-      <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-black/5 p-1">
-        {SIMPLE_PERIODS.map((p) => (
-          <Link
-            key={p.value}
-            href={`/reports?view=simple&speriod=${p.value}`}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium",
-              period === p.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
-            )}
-          >
-            {p.label}
-          </Link>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-black/5 p-1">
+          {SIMPLE_PERIODS.map((p) => (
+            <Link
+              key={p.value}
+              href={`/reports?view=simple&speriod=${p.value}`}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium",
+                !activeMonth && period === p.value
+                  ? "bg-white text-ink shadow-sm"
+                  : "text-muted hover:text-ink"
+              )}
+            >
+              {p.label}
+            </Link>
+          ))}
+        </div>
+        <MonthPicker
+          basePath="/reports"
+          params={{ view: "simple" }}
+          months={recentMonths()}
+          value={activeMonth}
+        />
       </div>
 
-      <Suspense key={period} fallback={<ReportSkeleton />}>
-        <SimpleReportContent period={period} />
+      <Suspense key={`${period}-${activeMonth}`} fallback={<ReportSkeleton />}>
+        <SimpleReportContent period={period} month={activeMonth ?? undefined} isOwner={isOwner} />
       </Suspense>
     </div>
   );
 }
 
-async function DetailedReportContent({ period }: { period: string }) {
-  const { start, end } = resolvePeriod(period);
+async function DetailedReportContent({ period, month }: { period: string; month?: string }) {
+  const { start, end } = resolvePeriod(period, month);
   const startStr = format(start, "yyyy-MM-dd");
   const endStr = format(end, "yyyy-MM-dd");
 
@@ -312,26 +357,37 @@ async function DetailedReportContent({ period }: { period: string }) {
   );
 }
 
-function DetailedReport({ period }: { period: string }) {
+function DetailedReport({ period, month }: { period: string; month?: string }) {
+  const activeMonth = isValidMonth(month) ? month : null;
   return (
     <div className="space-y-4">
-      <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-black/5 p-1">
-        {PERIODS.map((p) => (
-          <Link
-            key={p.value}
-            href={`/reports?view=detailed&period=${p.value}`}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-sm font-medium",
-              period === p.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
-            )}
-          >
-            {p.label}
-          </Link>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-black/5 p-1">
+          {PERIODS.map((p) => (
+            <Link
+              key={p.value}
+              href={`/reports?view=detailed&period=${p.value}`}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm font-medium",
+                !activeMonth && period === p.value
+                  ? "bg-white text-ink shadow-sm"
+                  : "text-muted hover:text-ink"
+              )}
+            >
+              {p.label}
+            </Link>
+          ))}
+        </div>
+        <MonthPicker
+          basePath="/reports"
+          params={{ view: "detailed" }}
+          months={recentMonths()}
+          value={activeMonth}
+        />
       </div>
 
-      <Suspense key={period} fallback={<ReportSkeleton />}>
-        <DetailedReportContent period={period} />
+      <Suspense key={`${period}-${activeMonth}`} fallback={<ReportSkeleton />}>
+        <DetailedReportContent period={period} month={activeMonth ?? undefined} />
       </Suspense>
     </div>
   );
@@ -340,10 +396,13 @@ function DetailedReport({ period }: { period: string }) {
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; period?: string; speriod?: string }>;
+  searchParams: Promise<{ view?: string; period?: string; speriod?: string; month?: string }>;
 }) {
-  const { view = "simple", period = "30", speriod = "today" } = await searchParams;
-  const activeView = view === "detailed" ? "detailed" : "simple";
+  const { view = "simple", period = "30", speriod = "today", month } = await searchParams;
+  const isOwner = (await getCurrentRole()) === "owner";
+  // Laporan Lengkap (P&L, HPP & profit per produk) is owner-only.
+  const activeView = view === "detailed" && isOwner ? "detailed" : "simple";
+  const visibleViews = isOwner ? VIEWS : VIEWS.filter((v) => v.value === "simple");
 
   return (
     <>
@@ -354,7 +413,7 @@ export default async function ReportsPage({
 
       <main className="flex-1 space-y-4 p-4 md:p-6">
         <div className="inline-flex items-center gap-1 rounded-lg bg-black/5 p-1">
-          {VIEWS.map((v) => (
+          {visibleViews.map((v) => (
             <Link
               key={v.value}
               href={`/reports?view=${v.value}`}
@@ -368,7 +427,11 @@ export default async function ReportsPage({
           ))}
         </div>
 
-        {activeView === "simple" ? <SimpleReport period={speriod} /> : <DetailedReport period={period} />}
+        {activeView === "simple" ? (
+          <SimpleReport period={speriod} month={month} isOwner={isOwner} />
+        ) : (
+          <DetailedReport period={period} month={month} />
+        )}
       </main>
     </>
   );

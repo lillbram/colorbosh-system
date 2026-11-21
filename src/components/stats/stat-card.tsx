@@ -11,6 +11,8 @@ type StatCardProps = {
   isMoney?: boolean;
   trend?: { direction: "up" | "down" | "none"; percent: number };
   footer?: string;
+  /** Small line under the value, independent of `trend`; `warn` turns it amber. */
+  note?: { text: string; warn?: boolean };
   info?: React.ReactNode;
 };
 
@@ -21,6 +23,7 @@ export function StatCard({
   isMoney = false,
   trend,
   footer,
+  note,
   info,
 }: StatCardProps) {
   const displayValue = isMoney && typeof value === "number" ? formatIDR(value) : value;
@@ -40,6 +43,11 @@ export function StatCard({
       >
         {displayValue}
       </div>
+      {note && (
+        <p className={cn("mt-2 text-xs", note.warn ? "font-medium text-warning" : "text-muted")}>
+          {note.text}
+        </p>
+      )}
       {trend && (
         <div className="mt-2 flex items-center gap-2">
           <span

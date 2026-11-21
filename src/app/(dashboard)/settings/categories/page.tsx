@@ -1,3 +1,4 @@
+import { requireRole } from "@/lib/auth";
 import { Tag } from "lucide-react";
 import { db } from "@/db";
 import { categories } from "@/db/schema";
@@ -20,6 +21,7 @@ import { deleteCategory } from "./actions";
 export const dynamic = "force-dynamic";
 
 export default async function CategoriesPage() {
+  await requireRole("owner");
   const data = await db.select().from(categories).orderBy(categories.name);
 
   return (

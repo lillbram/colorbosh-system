@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { accounts } from "@/db/schema";
@@ -17,6 +18,7 @@ function toDbValues(data: ReturnType<typeof accountSchema.parse>) {
 }
 
 export async function createAccount(formData: FormData) {
+  await requireRole("owner");
   const parsed = accountSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
@@ -45,6 +47,7 @@ export async function createAccount(formData: FormData) {
 }
 
 export async function updateAccount(id: string, formData: FormData) {
+  await requireRole("owner");
   const parsed = accountSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };

@@ -1,3 +1,4 @@
+import { requireRole } from "@/lib/auth";
 import { Users as UsersIcon } from "lucide-react";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -20,6 +21,7 @@ import { ToggleActiveSwitch } from "./toggle-active-switch";
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
+  await requireRole("owner");
   const [data, actorId] = await Promise.all([
     db.select().from(users).orderBy(users.name),
     getCurrentUserId(),

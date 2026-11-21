@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
@@ -10,6 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createUserSchema } from "@/lib/validators/auth";
 
 export async function createUserByOwner(formData: FormData) {
+  await requireRole("owner");
   const actorId = await getCurrentUserId();
   if (!actorId) {
     return { error: "Sesi tidak valid, silakan masuk ulang" };
@@ -59,6 +61,7 @@ export async function createUserByOwner(formData: FormData) {
 }
 
 export async function toggleUserActive(userId: string, isActive: boolean) {
+  await requireRole("owner");
   const actorId = await getCurrentUserId();
   if (!actorId) {
     return { error: "Sesi tidak valid, silakan masuk ulang" };

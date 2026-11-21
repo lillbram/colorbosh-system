@@ -1,3 +1,4 @@
+import { requireRole } from "@/lib/auth";
 import { Landmark } from "lucide-react";
 import { db } from "@/db";
 import { accounts } from "@/db/schema";
@@ -25,6 +26,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default async function AccountsPage() {
+  await requireRole("owner");
   const data = await db.select().from(accounts).orderBy(accounts.name);
 
   return (

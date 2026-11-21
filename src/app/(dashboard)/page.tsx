@@ -1,11 +1,13 @@
 import { Wallet, ShoppingBag, TrendingUp, Star, Receipt } from "lucide-react";
-import { startOfMonth, endOfMonth, format, subMonths } from "date-fns";
 import { Header } from "@/components/layout/header";
 import { StatCard } from "@/components/stats/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { ChannelDonut } from "@/components/dashboard/channel-donut";
-import { formatIDR } from "@/lib/format";
+import { MonthPicker } from "@/components/shared/month-picker";
+import { formatIDR, lastRecordedNote } from "@/lib/format";
+import { getCurrentRole } from "@/lib/auth";
+import { monthLabel, monthToDate, previousPeriod, recentMonths, todayJakarta } from "@/lib/period";
 import {
   getSaldoKas,
   getPenjualanPeriode,
@@ -18,12 +20,16 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardHomePage() {
-  const now = new Date();
-  const monthStart = format(startOfMonth(now), "yyyy-MM-dd");
-  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd");
-  const prevMonthStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
-  const prevMonthEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
+export default async function DashboardHomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
+  const { month: monthParam } = await searchParams;
+  const { start: monthStart, end: monthEnd, month } = monthToDate(monthParam);
+  const prev = previousPeriod(monthStart, monthEnd);
+  const isOwner = (await getCurrentRole()) === "owner";
+  const label = monthLabel(month);
 
   const [
     saldoKas,
@@ -38,9 +44,9 @@ export default async function DashboardHomePage() {
   ] = await Promise.all([
     getSaldoKas(),
     getPenjualanPeriode(monthStart, monthEnd),
-    getPenjualanPeriode(prevMonthStart, prevMonthEnd),
-    getProfitEstimasi(monthStart, monthEnd),
-    getProfitEstimasi(prevMonthStart, prevMonthEnd),
+    getPenjualanPeriode(prev.start, prev.end),
+    isOwner ? getProfitEstimasi(monthStart, monthEnd) : Promise.resolve(0),
+    isOwner ? getProfitEstimasi(prev.start, prev.end) : Promise.resolve(0),
     getTopProduk(monthStart, monthEnd, 3),
     getMonthlyRevenueTrend(7),
     getChannelBreakdown(monthStart, monthEnd),
@@ -61,30 +67,45 @@ export default async function DashboardHomePage() {
       <Header title="Ringkasan Bisnis" subtitle="Pantau kas, penjualan, dan profit." />
 
       <main className="flex-1 space-y-6 p-4 md:p-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <MonthPicker basePath="/" params={{}} months={recentMonths()} value={monthParam ? month : null} />
+          <p className="text-sm text-muted">
+            {label}: {monthStart.slice(8)}–{monthEnd.slice(8)} · dibanding periode sama bulan sebelumnya
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <StatCard icon={Wallet} label="Saldo Kas" value={saldoKas} isMoney />
+          <StatCard
+            icon={Wallet}
+            label="Saldo Kas"
+            value={saldoKas.saldo}
+            isMoney
+            note={lastRecordedNote(saldoKas.lastTxnDate, todayJakarta())}
+          />
           <StatCard
             icon={ShoppingBag}
-            label="Penjualan Bulan Ini"
+            label={`Penjualan ${label}`}
             value={penjualanBulanIni}
             isMoney
             trend={{
               direction: salesTrendPct > 0 ? "up" : salesTrendPct < 0 ? "down" : "none",
               percent: Math.abs(salesTrendPct),
             }}
-            footer="vs bulan lalu"
+            footer="vs periode sama bulan lalu"
           />
+          {isOwner && (
           <StatCard
-            icon={TrendingUp}
-            label="Profit Estimasi"
-            value={profitBulanIni}
-            isMoney
-            trend={{
-              direction: profitTrendPct > 0 ? "up" : profitTrendPct < 0 ? "down" : "none",
-              percent: Math.abs(profitTrendPct),
-            }}
-            footer="vs bulan lalu"
-          />
+              icon={TrendingUp}
+              label="Laba Bersih"
+              value={profitBulanIni}
+              isMoney
+              trend={{
+                direction: profitTrendPct > 0 ? "up" : profitTrendPct < 0 ? "down" : "none",
+                percent: Math.abs(profitTrendPct),
+              }}
+              footer="vs periode sama bulan lalu"
+            />
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -130,7 +151,7 @@ export default async function DashboardHomePage() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <Card className="xl:col-span-2">
             <CardHeader>
-              <CardTitle>Penjualan per Channel (Bulan Ini)</CardTitle>
+              <CardTitle>Penjualan per Channel ({label})</CardTitle>
             </CardHeader>
             <CardContent>
               <ChannelDonut data={channelBreakdown} />
@@ -146,7 +167,7 @@ export default async function DashboardHomePage() {
             </CardHeader>
             <CardContent className="space-y-3">
               {topProduk.length === 0 ? (
-                <p className="text-sm text-muted">Belum ada penjualan bulan ini.</p>
+                <p className="text-sm text-muted">Belum ada penjualan pada bulan ini.</p>
               ) : (
                 topProduk.map((p) => (
                   <div key={p.name} className="flex items-center justify-between">

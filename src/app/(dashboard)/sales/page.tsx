@@ -20,6 +20,9 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmCancelButton } from "@/components/shared/confirm-cancel-button";
 import { InfoTooltip } from "@/components/shared/info-tooltip";
 import { formatDate, formatIDR } from "@/lib/format";
+import { MonthPicker } from "@/components/shared/month-picker";
+import { getCurrentRole } from "@/lib/auth";
+import { isValidMonth, monthRange, recentMonths } from "@/lib/period";
 import { cn } from "@/lib/utils";
 import { cancelSalesEntry } from "./actions";
 import { ReturnSalesEntryDialog } from "./return-sales-entry-dialog";
@@ -68,11 +71,20 @@ function resolveDateRange(
 export default async function SalesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; channel?: string; period?: string; from?: string; to?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    channel?: string;
+    period?: string;
+    from?: string;
+    to?: string;
+    month?: string;
+  }>;
 }) {
-  const { status = "aktif", channel: channelFilter, period = "all", from, to } = await searchParams;
+  const { status = "aktif", channel: channelFilter, period = "all", from, to, month } = await searchParams;
+  const isOwner = (await getCurrentRole()) === "owner";
+  const activeMonth = isValidMonth(month) ? month : null;
   const activeTab = status === "dibatalkan" || status === "retur" ? status : "aktif";
-  const dateRange = resolveDateRange(period, from, to);
+  const dateRange = activeMonth ? monthRange(activeMonth) : resolveDateRange(period, from, to);
 
   const statusClause =
     activeTab === "dibatalkan"
@@ -147,13 +159,16 @@ export default async function SalesPage({
   );
 
   function buildUrl(overrides: { status?: string; channel?: string; period?: string }) {
+    // Picking a period preset replaces any selected month.
+    const keepMonth = activeMonth && overrides.period === undefined;
     const params = new URLSearchParams();
     const nextStatus = overrides.status ?? activeTab;
     const nextChannel = "channel" in overrides ? overrides.channel : channelFilter;
     const nextPeriod = overrides.period ?? period;
     if (nextStatus !== "aktif") params.set("status", nextStatus);
     if (nextChannel) params.set("channel", nextChannel);
-    if (nextPeriod !== "all") {
+    if (keepMonth) params.set("month", activeMonth);
+    else if (nextPeriod !== "all") {
       params.set("period", nextPeriod);
       if (nextPeriod === "custom" && from && to) {
         params.set("from", from);
@@ -273,7 +288,7 @@ export default async function SalesPage({
               href={buildUrl({ period: p.value })}
               className={cn(
                 "rounded-md px-3 py-1.5 text-sm font-medium",
-                period === p.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
+                !activeMonth && period === p.value ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink"
               )}
             >
               {p.label}
@@ -281,11 +296,17 @@ export default async function SalesPage({
           ))}
           <CustomDateRangeButton
             baseQuery={baseQuery}
-            active={period === "custom"}
+            active={!activeMonth && period === "custom"}
             initialFrom={period === "custom" ? from : undefined}
             initialTo={period === "custom" ? to : undefined}
           />
         </div>
+        <MonthPicker
+          basePath="/sales"
+          params={Object.fromEntries(new URLSearchParams(baseQuery))}
+          months={recentMonths()}
+          value={activeMonth}
+        />
 
         {rows.length > 0 && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -294,7 +315,7 @@ export default async function SalesPage({
               transaksi={overallSummary.transaksi}
               gross={overallSummary.gross}
               bersih={overallSummary.bersih}
-              profit={overallSummary.profit}
+              profit={isOwner ? overallSummary.profit : null}
               highlight
             />
             {groupedRows.map((g) => (
@@ -304,7 +325,7 @@ export default async function SalesPage({
                 transaksi={g.rows.length}
                 gross={g.gross}
                 bersih={g.bersih}
-                profit={g.profit}
+                profit={isOwner ? g.profit : null}
               />
             ))}
           </div>
@@ -351,8 +372,8 @@ export default async function SalesPage({
                   <TableHead>Qty</TableHead>
                   <TableHead>Bruto</TableHead>
                   <TableHead>Bersih</TableHead>
-                  <TableHead>HPP</TableHead>
-                  <TableHead>Profit</TableHead>
+                  {isOwner && <TableHead>HPP</TableHead>}
+                  {isOwner && <TableHead>Profit</TableHead>}
                   <TableHead>Sumber</TableHead>
                   <TableHead className="w-24">Status</TableHead>
                   {activeTab === "aktif" && <TableHead className="w-32" />}
@@ -363,7 +384,7 @@ export default async function SalesPage({
                   <Fragment key={g.channelId ?? "none"}>
                     <TableRow className="bg-black/[0.03] hover:bg-black/[0.03]">
                       <TableCell
-                        colSpan={activeTab === "aktif" ? 10 : 9}
+                        colSpan={(activeTab === "aktif" ? 10 : 9) - (isOwner ? 0 : 2)}
                         className="py-2 text-sm font-semibold text-ink"
                       >
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -377,14 +398,16 @@ export default async function SalesPage({
                           <span className="font-mono-num text-xs font-normal text-muted">
                             Bersih {formatIDR(g.bersih)}
                           </span>
-                          <span
-                            className={cn(
-                              "font-mono-num text-xs font-normal",
-                              g.profit < 0 ? "text-danger" : "text-success"
-                            )}
-                          >
-                            Profit {formatIDR(g.profit)}
-                          </span>
+                          {isOwner && (
+                            <span
+                              className={cn(
+                                "font-mono-num text-xs font-normal",
+                                g.profit < 0 ? "text-danger" : "text-success"
+                              )}
+                            >
+                              Profit {formatIDR(g.profit)}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -404,6 +427,8 @@ export default async function SalesPage({
                         <TableCell className="font-mono-num">
                           {formatIDR(Number(r.netExpected))}
                         </TableCell>
+                        {isOwner && (
+                          <>
                         <TableCell className="font-mono-num text-muted">
                           {formatIDR(Number(r.hppTarget ?? 0))}
                         </TableCell>
@@ -417,6 +442,8 @@ export default async function SalesPage({
                         >
                           {formatIDR(Number(r.netExpected) - Number(r.hppTarget ?? 0) * r.qty)}
                         </TableCell>
+                          </>
+                        )}
                         <TableCell>
                           <Badge variant="neutral">{SOURCE_LABEL[r.source ?? "manual"]}</Badge>
                         </TableCell>
@@ -466,7 +493,7 @@ function SummaryCard({
   transaksi: number;
   gross: number;
   bersih: number;
-  profit: number;
+  profit: number | null;
   highlight?: boolean;
 }) {
   return (
@@ -484,6 +511,7 @@ function SummaryCard({
           <span className="text-muted">Bersih</span>
           <span className="font-mono-num font-semibold text-ink">{formatIDR(bersih)}</span>
         </div>
+        {profit !== null && (
         <div className="flex items-center justify-between gap-2 text-sm">
           <span className="text-muted">Profit</span>
           <span
@@ -495,6 +523,7 @@ function SummaryCard({
             {formatIDR(profit)}
           </span>
         </div>
+        )}
       </div>
     </Card>
   );

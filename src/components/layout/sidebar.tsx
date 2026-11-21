@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronsUpDown, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRole } from "@/components/layout/role-context";
 import { MAIN_NAV, SETTINGS_NAV } from "@/lib/constants";
 
 function NavLink({
@@ -35,6 +36,8 @@ function NavLink({
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const role = useRole();
+  const isOwner = role === "owner";
 
   return (
     <div
@@ -48,8 +51,8 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           C
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-ink">Cardigan Biz</p>
-          <p className="truncate text-xs text-muted">Owner</p>
+          <p className="truncate text-sm font-semibold text-ink">Colorbosh</p>
+          <p className="truncate text-xs text-muted">{isOwner ? "Owner" : "Admin"}</p>
         </div>
         <ChevronsUpDown className="size-4 text-muted" />
       </button>
@@ -63,6 +66,8 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           />
         ))}
 
+        {isOwner && (
+          <>
         <p className="mt-5 px-3 text-xs font-semibold uppercase tracking-wide text-muted/70">
           Data Master
         </p>
@@ -73,6 +78,8 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             active={pathname === item.href}
           />
         ))}
+          </>
+        )}
       </nav>
 
       <Link
