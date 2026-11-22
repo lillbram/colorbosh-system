@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Colorbosh",
   description: "Kelola penjualan, stok, dan kas bisnis Colorbosh.",
-  icons: { icon: "/logo-placeholder.svg", apple: "/icons/apple-touch-icon.png" },
+  icons: { icon: "/logo.svg", apple: "/icons/apple-touch-icon.png" },
   appleWebApp: { capable: true, title: "Colorbosh", statusBarStyle: "default" },
 };
 

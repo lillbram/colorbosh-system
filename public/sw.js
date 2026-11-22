@@ -1,7 +1,7 @@
 // Minimal app-shell worker: caches static assets only. Never caches pages,
 // server actions or API responses (they are signed-in, per-user data), and
 // there are no offline writes. Bump VERSION to drop old caches.
-const VERSION = "v1";
+const VERSION = "v2";
 const CACHE = `colorbosh-static-${VERSION}`;
 const OFFLINE_URL = "/offline.html";
 
