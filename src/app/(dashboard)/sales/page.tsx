@@ -280,6 +280,18 @@ export default async function SalesPage({
           </Link>
         </div>
 
+        <div className="hidden rounded-lg bg-canvas px-3 py-2 text-xs text-muted md:block">
+          <p>
+            <span className="font-medium text-ink">Mana yang dipakai?</span> TikTok → Impor file pesanan (atau Rekap Live
+            untuk perkiraan hari itu, nanti diganti saat impor). Shopee &amp; Paket Usaha → Kasir (POS). Koreksi satu
+            order → Input Manual. Fee asli TikTok:{" "}
+            <Link href="/sales/settlements/import" className="font-medium text-primary-600 hover:underline">
+              Impor Fee TikTok
+            </Link>
+            .
+          </p>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-1 rounded-lg bg-black/5 p-1">
             {TABS.map((t) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
@@ -25,7 +25,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { importSalesCsv } from "../../actions";
+import { parseJakartaDateTime } from "@/lib/tiktok-returns";
+import { parseMoney } from "@/lib/brimo-statement";
+import { formatDate, formatIDR } from "@/lib/format";
+import { getLiveOverlap, importSalesCsv } from "../../actions";
 
 type Option = { id: string; name: string };
 type ProductOption = Option & { sku: string | null };
@@ -41,12 +44,24 @@ const FIELD_LABEL: Record<FieldKey, string> = {
 };
 
 const AUTO_DETECT: Record<FieldKey, string[]> = {
-  orderRef: ["order id", "order_id", "no order", "order number", "no. pesanan"],
-  entryDate: ["order date", "tanggal", "date", "created time", "waktu pesanan dibuat"],
-  sku: ["sku", "seller sku", "sku induk", "sku reference no."],
+  orderRef: ["order id", "order_id", "no order", "order number", "no. pesanan", "id pesanan"],
+  entryDate: ["order date", "tanggal", "date", "created time", "waktu pesanan dibuat", "waktu dibuat"],
+  sku: ["sku", "seller sku", "sku induk", "sku reference no.", "sku penjual"],
   qty: ["qty", "quantity", "jumlah"],
   grossAmount: ["total", "amount", "total harga produk", "order amount", "harga"],
 };
+
+// TikTok Seller Center order export — column names are fixed, so one click maps them all.
+// Gross = price after seller discount (what the buyer actually paid for the item).
+const TIKTOK_PRESET: Record<FieldKey, string[]> = {
+  orderRef: ["order id", "id pesanan"],
+  entryDate: ["created time", "waktu dibuat", "waktu pesanan dibuat"],
+  sku: ["seller sku", "sku penjual"],
+  qty: ["quantity", "jumlah"],
+  grossAmount: ["sku subtotal after discount", "subtotal sku setelah diskon", "subtotal setelah diskon penjual"],
+};
+const STATUS_COLUMNS = ["order status", "status pesanan"];
+const CANCELLED = /cancel|batal/i;
 
 function autoDetectColumn(headers: string[], field: FieldKey): string {
   const candidates = AUTO_DETECT[field];
@@ -55,9 +70,16 @@ function autoDetectColumn(headers: string[], field: FieldKey): string {
 }
 
 function normalizeDate(value: string): string {
+  // TikTok exports dd/MM/yyyy HH:mm:ss (Jakarta); `new Date()` would read it as MM/dd.
+  const jakarta = parseJakartaDateTime(value);
+  if (jakarta) return jakarta.slice(0, 10);
   const d = new Date(value);
   if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
   return "";
+}
+
+function detect(headers: string[], candidates: string[]): string {
+  return headers.find((h) => candidates.includes(h.toLowerCase().trim())) ?? "";
 }
 
 export function CsvImportForm({
@@ -79,6 +101,10 @@ export function CsvImportForm({
     grossAmount: "",
   });
   const [channelId, setChannelId] = useState("");
+  const [tiktokPreset, setTiktokPreset] = useState(false);
+  const [skipCancelled, setSkipCancelled] = useState(true);
+  const [replaceLive, setReplaceLive] = useState(false);
+  const [overlap, setOverlap] = useState<{ date: string; rows: number; qty: number; gross: number }[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -99,16 +125,39 @@ export function CsvImportForm({
       const productId = skuToProductId.get(skuValue);
       const entryDate = normalizeDate(String(row[mapping.entryDate] ?? ""));
       const qty = Number(row[mapping.qty]);
-      const grossAmount = Number(String(row[mapping.grossAmount] ?? "").replace(/[^\d.-]/g, ""));
+      const grossAmount = parseMoney(row[mapping.grossAmount]) ?? 0;
       const orderRef = String(row[mapping.orderRef] ?? "").trim();
+      const statusCol = detect(headers, STATUS_COLUMNS);
+      const cancelled = skipCancelled && statusCol !== "" && CANCELLED.test(String(row[statusCol] ?? ""));
 
-      const valid = Boolean(productId) && Boolean(entryDate) && qty > 0 && orderRef !== "";
+      const valid = Boolean(productId) && Boolean(entryDate) && qty > 0 && orderRef !== "" && !cancelled;
 
-      return { orderRef, entryDate, productId, qty, grossAmount, skuValue, valid };
+      return { orderRef, entryDate, productId, qty, grossAmount, skuValue, valid, cancelled };
     });
-  }, [rawRows, mapping, skuToProductId]);
+  }, [rawRows, mapping, skuToProductId, headers, skipCancelled]);
 
   const validCount = resolvedRows.filter((r) => r.valid).length;
+  const cancelledCount = resolvedRows.filter((r) => r.cancelled).length;
+
+  // Days in this file that already have Rekap Live totals for the channel (double-count risk).
+  const fileDates = useMemo(
+    () => [...new Set(resolvedRows.filter((r) => r.valid).map((r) => r.entryDate))].sort(),
+    [resolvedRows]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    if (!channelId || fileDates.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clears stale overlap when inputs change
+      setOverlap([]);
+      return;
+    }
+    getLiveOverlap(channelId, fileDates).then((res) => {
+      if (!cancelled) setOverlap(res);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [channelId, fileDates]);
 
   function handleFile(file: File) {
     setFileName(file.name);
@@ -143,26 +192,41 @@ export function CsvImportForm({
     const detectedHeaders = Object.keys(rows[0]);
     setHeaders(detectedHeaders);
     setRawRows(rows);
-    setMapping({
-      orderRef: autoDetectColumn(detectedHeaders, "orderRef"),
-      entryDate: autoDetectColumn(detectedHeaders, "entryDate"),
-      sku: autoDetectColumn(detectedHeaders, "sku"),
-      qty: autoDetectColumn(detectedHeaders, "qty"),
-      grossAmount: autoDetectColumn(detectedHeaders, "grossAmount"),
-    });
+    // TikTok preset first (exact Seller Center columns), generic auto-detect as the fallback.
+    const preset = Object.fromEntries(
+      (Object.keys(TIKTOK_PRESET) as FieldKey[]).map((f) => [f, detect(detectedHeaders, TIKTOK_PRESET[f])])
+    ) as Record<FieldKey, string>;
+    const presetComplete = Object.values(preset).every(Boolean);
+    setTiktokPreset(presetComplete);
+    setMapping(
+      presetComplete
+        ? preset
+        : {
+            orderRef: autoDetectColumn(detectedHeaders, "orderRef"),
+            entryDate: autoDetectColumn(detectedHeaders, "entryDate"),
+            sku: autoDetectColumn(detectedHeaders, "sku"),
+            qty: autoDetectColumn(detectedHeaders, "qty"),
+            grossAmount: autoDetectColumn(detectedHeaders, "grossAmount"),
+          }
+    );
   }
 
   function handleImport() {
     setError(null);
-    const validRows = resolvedRows
-      .filter((r) => r.valid)
-      .map((r) => ({
-        orderRef: r.orderRef,
-        entryDate: r.entryDate,
-        productId: r.productId!,
-        qty: r.qty,
-        grossAmount: r.grossAmount,
-      }));
+    // One order can list the same product on several SKU lines; the database keeps one row
+    // per (channel, order, product), so merge them here instead of silently dropping the rest.
+    const merged = new Map<string, { orderRef: string; entryDate: string; productId: string; qty: number; grossAmount: number }>();
+    for (const r of resolvedRows.filter((r) => r.valid)) {
+      const key = `${r.orderRef}|${r.productId}`;
+      const prev = merged.get(key);
+      if (prev) {
+        prev.qty += r.qty;
+        prev.grossAmount += r.grossAmount;
+      } else {
+        merged.set(key, { orderRef: r.orderRef, entryDate: r.entryDate, productId: r.productId!, qty: r.qty, grossAmount: r.grossAmount });
+      }
+    }
+    const validRows = [...merged.values()];
 
     if (validRows.length === 0) {
       setError("Tidak ada baris valid untuk diimpor. Cek pemetaan kolom dan SKU produk.");
@@ -172,6 +236,7 @@ export function CsvImportForm({
     const formData = new FormData();
     formData.set("channelId", channelId);
     formData.set("rowsJson", JSON.stringify(validRows));
+    if (replaceLive && overlap.length > 0) formData.set("replaceLiveDates", JSON.stringify(overlap.map((o) => o.date)));
 
     startTransition(async () => {
       const result = await importSalesCsv(formData);
@@ -241,6 +306,37 @@ export function CsvImportForm({
 
       {headers.length > 0 && (
         <>
+          {tiktokPreset && (
+            <Card className="border-success/40 bg-success/5 p-3 text-sm text-ink">
+              Format TikTok Seller Center dikenali — kolom dipetakan otomatis (harga = subtotal SKU setelah diskon).
+              {cancelledCount > 0 && (
+                <label className="mt-2 flex items-center gap-2">
+                  <input type="checkbox" checked={skipCancelled} onChange={(e) => setSkipCancelled(e.target.checked)} className="size-4" />
+                  Lewati {cancelledCount} pesanan yang dibatalkan
+                </label>
+              )}
+            </Card>
+          )}
+
+          {overlap.length > 0 && (
+            <Card className="space-y-2 border-warning/40 bg-warning/5 p-3 text-sm">
+              <p className="font-medium text-ink">
+                Sudah ada Rekap Live untuk {overlap.length} hari di file ini — bisa terhitung dua kali.
+              </p>
+              <ul className="text-xs text-muted">
+                {overlap.map((o) => (
+                  <li key={o.date}>
+                    {formatDate(o.date)}: {o.rows} baris rekap, {o.qty} pcs, {formatIDR(o.gross)}
+                  </li>
+                ))}
+              </ul>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={replaceLive} onChange={(e) => setReplaceLive(e.target.checked)} className="size-4" />
+                Ganti rekap live hari-hari itu dengan data impor ini (rekap dibatalkan, stok dikembalikan)
+              </label>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>2. Pemetaan Kolom</CardTitle>

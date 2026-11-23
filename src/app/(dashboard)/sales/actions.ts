@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { format } from "date-fns";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -9,7 +9,7 @@ import { salesEntries, salesLiveSessions, channels, payoutSalesLink } from "@/db
 import { getCurrentUserId } from "@/lib/auth";
 import { todayJakarta } from "@/lib/period";
 import { recordSaleOut, restockWholeRowReturn, reverseSaleOut } from "@/lib/stock";
-import { withAudit } from "@/lib/audit";
+import { withAudit, writeAuditLog } from "@/lib/audit";
 import {
   manualSaleSchema,
   liveSessionSchema,
@@ -145,6 +145,32 @@ export async function createLiveSession(formData: FormData) {
   redirect("/sales");
 }
 
+/** Rekap Live totals already recorded for the given days on a channel (for the import overlap warning). */
+export async function getLiveOverlap(channelId: string, dates: string[]) {
+  if (!channelId || dates.length === 0) return [];
+  const rows = await db
+    .select({ date: salesEntries.entryDate, qty: salesEntries.qty, gross: salesEntries.grossAmount })
+    .from(salesEntries)
+    .where(
+      and(
+        eq(salesEntries.channelId, channelId),
+        eq(salesEntries.source, "live_bulk"),
+        eq(salesEntries.isDeleted, false),
+        eq(salesEntries.isReturned, false),
+        inArray(salesEntries.entryDate, dates.slice(0, 400))
+      )
+    );
+  const byDate = new Map<string, { date: string; rows: number; qty: number; gross: number }>();
+  for (const r of rows) {
+    const d = byDate.get(r.date) ?? { date: r.date, rows: 0, qty: 0, gross: 0 };
+    d.rows += 1;
+    d.qty += r.qty;
+    d.gross += Number(r.gross);
+    byDate.set(r.date, d);
+  }
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function importSalesCsv(formData: FormData) {
   const raw = Object.fromEntries(formData);
   let rows: unknown;
@@ -162,10 +188,47 @@ export async function importSalesCsv(formData: FormData) {
   const actorId = await getCurrentUserId();
   const channel = await getChannel(parsed.data.channelId);
 
+  let replaceLiveDates: string[] = [];
+  try {
+    const parsedDates = JSON.parse(String(raw.replaceLiveDates ?? "[]"));
+    if (Array.isArray(parsedDates)) replaceLiveDates = parsedDates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+  } catch {}
+
   let insertedCount = 0;
 
   try {
     await withTransaction(async (tx) => {
+      // "Ganti rekap live": cancel the day's live totals (and put their stock back) before the
+      // per-order rows go in, so the same sales are not counted twice.
+      if (replaceLiveDates.length > 0) {
+        const live = await tx
+          .select({ id: salesEntries.id, date: salesEntries.entryDate })
+          .from(salesEntries)
+          .where(
+            and(
+              eq(salesEntries.channelId, parsed.data.channelId),
+              eq(salesEntries.source, "live_bulk"),
+              eq(salesEntries.isDeleted, false),
+              inArray(salesEntries.entryDate, replaceLiveDates)
+            )
+          );
+        if (live.length > 0) {
+          const t = tx as unknown as typeof db;
+          await assertNotReconciled(t, live.map((l) => l.id));
+          await t.update(salesEntries).set({ isDeleted: true }).where(inArray(salesEntries.id, live.map((l) => l.id)));
+          await reverseSaleOut(t, live.map((l) => l.id), todayJakarta(), actorId);
+          for (const l of live) {
+            await writeAuditLog(t, {
+              entityType: "sales_entry",
+              entityId: l.id,
+              action: "delete",
+              actorId,
+              diff: { reason: "diganti impor per-order", date: l.date },
+            });
+          }
+        }
+      }
+
       for (const row of parsed.data.rows) {
         const platformFeeEst = Math.round((row.grossAmount * channel.feePct) / 100);
         const result = await tx
