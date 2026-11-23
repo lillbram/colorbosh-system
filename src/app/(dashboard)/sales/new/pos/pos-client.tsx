@@ -26,7 +26,7 @@ import { createPosOrder, cancelPosOrder } from "../../actions";
 
 const CHANNEL_KEY = "pos.lastChannel";
 
-type Product = { id: string; name: string; sku: string | null; basePrice: string | null; avgCost: number };
+type Product = { id: string; name: string; sku: string | null; basePrice: string | null; avgCost: number; stock: number };
 type Channel = { id: string; name: string };
 type CartItem = { productId: string; name: string; qty: number; unitPrice: number; avgCost: number };
 type TodayOrder = {
@@ -190,6 +190,9 @@ export function PosClient({
                     {p.sku && <p className="text-xs text-muted">{p.sku}</p>}
                     <p className="font-mono-num mt-1 text-sm font-semibold text-primary-600">
                       {formatIDR(Number(p.basePrice ?? 0))}
+                    </p>
+                    <p className={cn("text-xs font-medium", p.stock <= 0 ? "text-danger" : "text-muted")}>
+                      {p.stock <= 0 ? "Stok habis" : `Stok: ${p.stock}`}
                     </p>
                   </button>
                   {inCart > 0 && (

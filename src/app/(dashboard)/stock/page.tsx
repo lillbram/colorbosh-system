@@ -116,7 +116,7 @@ export default async function StockPage({
                 <TableRow>
                   <TableHead>Produk</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Stok</TableHead>
+                  <TableHead className="text-right">Stok Akhir</TableHead>
                   {isOwner && <TableHead className="text-right">Nilai</TableHead>}
                   <TableHead>Status</TableHead>
                   <TableHead className="w-36" />
@@ -177,11 +177,12 @@ export default async function StockPage({
                       )}
                     </div>
                   </div>
-                  {l.hasOpening ? (
+                  <div className="flex flex-col items-end gap-1">
                     <span className="font-mono-num text-xl font-bold text-ink">{l.qty}</span>
-                  ) : (
-                    <OpeningStockDialog productId={l.productId} productName={l.name} today={today} />
-                  )}
+                    {!l.hasOpening && (
+                      <OpeningStockDialog productId={l.productId} productName={l.name} today={today} />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

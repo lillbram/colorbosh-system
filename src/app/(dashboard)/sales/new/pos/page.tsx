@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { db } from "@/db";
 import { products, channels, salesEntries } from "@/db/schema";
 import { Header } from "@/components/layout/header";
+import { getStockLevels } from "@/lib/stock";
 import { PosClient } from "./pos-client";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function PosPage() {
   const today = format(new Date(), "yyyy-MM-dd");
 
-  const [productList, channelList, todayRows] = await Promise.all([
+  const [productList, channelList, todayRows, stockLevels] = await Promise.all([
     db
       .select({
         id: products.id,
@@ -42,11 +43,14 @@ export default async function PosPage() {
           eq(salesEntries.isDeleted, false)
         )
       ),
+    getStockLevels(),
   ]);
+  const stockById = new Map(stockLevels.map((l) => [l.productId, l.qty]));
 
   const productsWithCost = productList.map((p) => ({
     ...p,
     avgCost: Number(p.hppTarget ?? 0),
+    stock: stockById.get(p.id) ?? 0,
   }));
 
   const ordersByRef = new Map<
