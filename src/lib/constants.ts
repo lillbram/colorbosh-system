@@ -11,6 +11,7 @@ import {
   Scale,
   Banknote,
   SlidersHorizontal,
+  MessageCircleQuestion,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ export const MAIN_NAV: NavItem[] = [
   { label: "Laporan", href: "/reports", icon: FileBarChart },
   { label: "Modal", href: "/capital", icon: Scale, ownerOnly: true },
   { label: "Gaji", href: "/salary", icon: Banknote, ownerOnly: true },
+  { label: "Tanya", href: "/ask", icon: MessageCircleQuestion, ownerOnly: true },
 ];
 
 export const SETTINGS_NAV: NavItem[] = [

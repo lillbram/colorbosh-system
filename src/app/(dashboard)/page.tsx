@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { ChannelDonut } from "@/components/dashboard/channel-donut";
 import { MonthPicker } from "@/components/shared/month-picker";
+import { RecapCard } from "@/components/dashboard/recap-card";
+import { claudeEnabled } from "@/lib/claude";
 import { formatIDR, lastRecordedNote } from "@/lib/format";
 import { getCurrentRole } from "@/lib/auth";
 import { getLowStockThreshold, getStockLevels } from "@/lib/stock";
@@ -100,6 +102,8 @@ export default async function DashboardHomePage({
             {label}: {monthStart.slice(8)}–{monthEnd.slice(8)} · dibanding periode sama bulan sebelumnya
           </p>
         </div>
+
+        {isOwner && <RecapCard enabled={claudeEnabled()} today={todayJakarta()} />}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard
