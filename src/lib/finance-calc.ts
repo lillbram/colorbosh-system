@@ -64,3 +64,40 @@ export function computePnL(input: {
     labaBersih,
   };
 }
+
+export type SalaryMonth = { month: string; entitlement: number; paid: number; remaining: number };
+
+/**
+ * Spreads salary payments over months. Payments naming a month go to that
+ * month; payments without one fill the OLDEST month that still has a
+ * remainder (docs/COLORBOSH_DEV_SPEC.md §3).
+ */
+export function allocateSalary(
+  months: { month: string; entitlement: number }[],
+  payments: { periodMonth: string | null; amount: number }[]
+): SalaryMonth[] {
+  const rows = [...months]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((m) => ({ ...m, paid: 0, remaining: m.entitlement }));
+  const byMonth = new Map(rows.map((r) => [r.month, r]));
+
+  let unassigned = 0;
+  for (const p of payments) {
+    const row = p.periodMonth ? byMonth.get(p.periodMonth) : undefined;
+    if (row) {
+      row.paid += p.amount;
+      row.remaining -= p.amount;
+    } else {
+      unassigned += p.amount;
+    }
+  }
+  for (const row of rows) {
+    if (unassigned <= 0) break;
+    if (row.remaining <= 0) continue;
+    const take = Math.min(row.remaining, unassigned);
+    row.paid += take;
+    row.remaining -= take;
+    unassigned -= take;
+  }
+  return rows;
+}

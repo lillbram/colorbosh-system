@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Landmark, FileSpreadsheet } from "lucide-react";
+import { Landmark, FileSpreadsheet, ScanLine, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -20,6 +20,7 @@ import { ConfirmDeleteButton } from "@/components/shared/confirm-delete-button";
 import { formatDate, formatIDR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ManualEntryDialog } from "./manual-entry-dialog";
+import { ConfirmDraftButton } from "./confirm-draft-button";
 import { deleteManualCashTransaction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +28,9 @@ export const dynamic = "force-dynamic";
 export default async function CashFlowPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; new?: string }>;
+  searchParams: Promise<{ account?: string; new?: string; filter?: string; ref?: string }>;
 }) {
-  const { account: accountFilter, new: openNew } = await searchParams;
+  const { account: accountFilter, new: openNew, filter, ref: refFilter } = await searchParams;
 
   const [accountList, categoryList, allTxns] = await Promise.all([
     db.select().from(accounts).orderBy(accounts.name),
@@ -46,6 +47,9 @@ export default async function CashFlowPage({
         categoryId: cashTransactions.categoryId,
         accountName: accounts.name,
         categoryName: categories.name,
+        proofUrl: cashTransactions.proofUrl,
+        status: cashTransactions.status,
+        bankRef: cashTransactions.bankRef,
       })
       .from(cashTransactions)
       .leftJoin(accounts, eq(cashTransactions.accountId, accounts.id))
@@ -61,34 +65,52 @@ export default async function CashFlowPage({
     return { ...acc, balance: Number(acc.openingBalance) + netMovement };
   });
 
-  const rows = accountFilter
-    ? allTxns.filter((t) => t.accountId === accountFilter)
-    : allTxns;
+  const noProofCount = allTxns.filter((t) => t.direction === "out" && !t.proofUrl && t.status === "confirmed").length;
+  const draftCount = allTxns.filter((t) => t.status === "draft").length;
+
+  const rows = allTxns.filter(
+    (t) =>
+      (!accountFilter || t.accountId === accountFilter) &&
+      (!refFilter || t.bankRef === refFilter || t.bankRef === `${refFilter}:fee`) &&
+      (filter !== "no-proof" || (t.direction === "out" && !t.proofUrl && t.status === "confirmed")) &&
+      (filter !== "draft" || t.status === "draft")
+  );
 
   const totalSaldo = balances.reduce((sum, b) => sum + b.balance, 0);
 
-  const rowActions = (t: (typeof rows)[number]) =>
-    t.relatedType === "manual" ? (
-      <div className="flex items-center justify-end gap-1">
-        <ManualEntryDialog
-          accounts={accountList}
-          categories={categoryList}
-          entry={{
-            id: t.id,
-            txnDate: t.txnDate,
-            accountId: t.accountId,
-            categoryId: t.categoryId,
-            direction: t.direction,
-            amount: Number(t.amount),
-            description: t.description,
-          }}
-        />
-        <ConfirmDeleteButton
-          itemName="transaksi ini"
-          onConfirm={deleteManualCashTransaction.bind(null, t.id)}
-        />
-      </div>
-    ) : null;
+  const rowActions = (t: (typeof rows)[number]) => (
+    <div className="flex items-center justify-end gap-1">
+      {t.status === "draft" && <ConfirmDraftButton id={t.id} />}
+      {t.proofUrl && (
+        <Button size="icon" variant="ghost" asChild title="Lihat bukti">
+          <a href={`/cash-flow/proof/${t.id}`} target="_blank" rel="noreferrer">
+            <Paperclip className="size-4" />
+          </a>
+        </Button>
+      )}
+      {t.relatedType === "manual" && (
+        <>
+          <ManualEntryDialog
+            accounts={accountList}
+            categories={categoryList}
+            entry={{
+              id: t.id,
+              txnDate: t.txnDate,
+              accountId: t.accountId,
+              categoryId: t.categoryId,
+              direction: t.direction,
+              amount: Number(t.amount),
+              description: t.description,
+            }}
+          />
+          <ConfirmDeleteButton
+            itemName="transaksi ini"
+            onConfirm={deleteManualCashTransaction.bind(null, t.id)}
+          />
+        </>
+      )}
+    </div>
+  );
 
 
   return (
@@ -141,6 +163,18 @@ export default async function CashFlowPage({
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" asChild>
+              <Link href="/cash-flow/bank-import">
+                <Landmark className="size-4" />
+                Impor Mutasi BRImo
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/cash-flow/receipt">
+                <ScanLine className="size-4" />
+                Upload Bukti
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
               <Link href="/cash-flow/bulk-import">
                 <FileSpreadsheet className="size-4" />
                 Impor Excel
@@ -148,6 +182,37 @@ export default async function CashFlowPage({
             </Button>
             <ManualEntryDialog accounts={accountList} categories={categoryList} defaultOpen={openNew === "1"} />
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {[
+            { value: undefined, label: "Semua" },
+            { value: "no-proof", label: `Belum ada bukti (${noProofCount})` },
+            { value: "draft", label: `Perlu dicek (${draftCount})` },
+          ].map((f) => (
+            <Link
+              key={f.label}
+              href={`/cash-flow${[
+                accountFilter && `account=${accountFilter}`,
+                f.value && `filter=${f.value}`,
+              ]
+                .filter(Boolean)
+                .reduce((q, part, i) => `${q}${i === 0 ? "?" : "&"}${part}`, "")}`}
+              className={cn(
+                "rounded-full border px-3 py-1 font-medium",
+                filter === f.value || (!filter && !f.value)
+                  ? "border-primary-500 bg-primary-50 text-primary-700"
+                  : "border-border text-muted hover:text-ink"
+              )}
+            >
+              {f.label}
+            </Link>
+          ))}
+          {refFilter && (
+            <Link href="/cash-flow" className="rounded-full border border-warning px-3 py-1 text-warning">
+              No. Ref {refFilter} ✕
+            </Link>
+          )}
         </div>
 
         <Card>
@@ -184,6 +249,7 @@ export default async function CashFlowPage({
                         {t.relatedType && t.relatedType !== "manual" && (
                           <Badge variant="neutral">otomatis</Badge>
                         )}
+                        {t.status === "draft" && <Badge variant="warning">Perlu dicek</Badge>}
                       </div>
                     </TableCell>
                     <TableCell>{t.categoryName ?? "-"}</TableCell>
@@ -212,6 +278,7 @@ export default async function CashFlowPage({
                     <p className="text-xs text-muted">
                       {formatDate(t.txnDate)} · {t.accountName ?? "-"} · {t.categoryName ?? "-"}
                       {t.relatedType && t.relatedType !== "manual" && " · otomatis"}
+                      {t.status === "draft" && " · perlu dicek"}
                     </p>
                     <p
                       className={cn(

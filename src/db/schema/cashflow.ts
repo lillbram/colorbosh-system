@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
+  uniqueIndex,
   pgEnum,
   uuid,
   text,
@@ -18,9 +20,21 @@ export const cashRelatedTypeEnum = pgEnum("cash_related_type", [
   "tailor_payment",
   "payout",
   "manual",
+  "salary",
 ]);
 
-export const cashTransactions = pgTable("cash_transactions", {
+export const cashSourceEnum = pgEnum("cash_source", [
+  "manual",
+  "bulk_excel",
+  "bank_csv",
+  "receipt_scan",
+]);
+
+export const cashStatusEnum = pgEnum("cash_status", ["draft", "confirmed"]);
+
+export const cashTransactions = pgTable(
+  "cash_transactions",
+  {
   id: uuid("id").primaryKey().defaultRandom(),
   txnDate: date("txn_date").notNull(),
   accountId: uuid("account_id").references(() => accounts.id),
@@ -34,4 +48,17 @@ export const cashTransactions = pgTable("cash_transactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   createdBy: uuid("created_by").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false),
-});
+  // Phase 6 — payment proof capture. bankRef = BRImo "No. Ref" (receipts) or
+  // "brimo:<key>" (e-statement rows); proofUrl = path inside the private
+  // `proofs` storage bucket. See CLAUDE.md §6.5.
+  bankRef: text("bank_ref"),
+  periodMonth: text("period_month"),
+  counterparty: text("counterparty"),
+  source: cashSourceEnum("source").notNull().default("manual"),
+  status: cashStatusEnum("status").notNull().default("confirmed"),
+},
+(t) => [
+  uniqueIndex("cash_transactions_bank_ref_uniq")
+    .on(t.bankRef)
+    .where(sql`${t.bankRef} is not null and not ${t.isDeleted}`),
+]);

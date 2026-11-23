@@ -1,4 +1,5 @@
 import { and, eq, gte, lte, ne, notInArray, or, isNull, sql } from "drizzle-orm";
+import { addMonths, format, parseISO } from "date-fns";
 import { db } from "@/db";
 import {
   cashTransactions,
@@ -7,8 +8,17 @@ import {
   products,
   salesEntries,
   salesReturns,
+  settings,
 } from "@/db/schema";
-import { computePnL, returnLoss, type CashOutRow, type ReturnRow, type SaleRow } from "@/lib/finance-calc";
+import {
+  allocateSalary,
+  computePnL,
+  returnLoss,
+  type CashOutRow,
+  type ReturnRow,
+  type SaleRow,
+} from "@/lib/finance-calc";
+import { monthRange, todayJakarta } from "@/lib/period";
 
 async function loadSales(start: string, end: string): Promise<SaleRow[]> {
   const rows = await db
@@ -118,4 +128,50 @@ export async function getPnL(start: string, end: string) {
     .sort((a, b) => b.gross - a.gross);
 
   return { ...pnl, penjualanPerChannel };
+}
+
+/**
+ * Oldest month where salary entitlement (Laba Bersih × salaryPct) is not yet
+ * covered by Gaji payments, or null when everything is paid / no sales yet.
+ * Used to suggest the period for a Gaji transfer (Phase 6); Phase 4 reuses it.
+ */
+export async function getOldestUnpaidSalaryMonth(): Promise<string | null> {
+  const [first] = await db
+    .select({ d: sql<string | null>`min(${salesEntries.entryDate})` })
+    .from(salesEntries)
+    .where(eq(salesEntries.isDeleted, false));
+  if (!first?.d) return null;
+
+  const [cfg] = await db.select({ pct: settings.salaryPct }).from(settings).where(eq(settings.id, 1));
+  const pct = Number(cfg?.pct ?? 1);
+
+  const lastMonth = todayJakarta().slice(0, 7);
+  const months: string[] = [];
+  for (let m = parseISO(`${first.d.slice(0, 7)}-01`); format(m, "yyyy-MM") <= lastMonth; m = addMonths(m, 1)) {
+    months.push(format(m, "yyyy-MM"));
+  }
+
+  const pnls = await Promise.all(
+    months.map((month) => {
+      const r = monthRange(month);
+      return getPnL(r.start, r.end);
+    })
+  );
+  const payments = await db
+    .select({ periodMonth: cashTransactions.periodMonth, amount: cashTransactions.amount })
+    .from(cashTransactions)
+    .innerJoin(categories, eq(cashTransactions.categoryId, categories.id))
+    .where(
+      and(
+        eq(categories.name, "Gaji"),
+        eq(cashTransactions.direction, "out"),
+        eq(cashTransactions.isDeleted, false)
+      )
+    );
+
+  const result = allocateSalary(
+    months.map((month, i) => ({ month, entitlement: Math.max(0, pnls[i].labaBersih) * pct })),
+    payments.map((p) => ({ periodMonth: p.periodMonth, amount: Number(p.amount) }))
+  );
+  return result.find((r) => r.remaining > 0)?.month ?? null;
 }

@@ -34,7 +34,7 @@ const QUICK_ACTIONS: { label: string; hint: string; href: string; icon: LucideIc
   { label: "Catat Penjualan", hint: "Kasir (POS)", href: "/sales/new/pos", icon: ShoppingCart },
   { label: "Rekap Live", hint: "Hitung penjualan live", href: "/sales/new/live", icon: Radio },
   { label: "Stok Masuk", hint: "Barang dari penjahit", href: "/stock?new=1", icon: PackagePlus },
-  { label: "Upload Bukti", hint: "Foto bukti transfer", href: "/cash-flow?new=1", icon: ScanLine },
+  { label: "Upload Bukti", hint: "Foto bukti transfer", href: "/cash-flow/receipt", icon: ScanLine },
 ];
 
 function TabLink({ tab, pathname }: { tab: Tab; pathname: string }) {

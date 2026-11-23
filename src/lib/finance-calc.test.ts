@@ -61,3 +61,34 @@ test("returnLoss: restocked returns recover HPP, others lose the full refund", (
     4_048 + 54_048
   );
 });
+
+test("allocateSalary: named months first, unnamed payments fill the oldest remainder", async () => {
+  const { allocateSalary } = await import("./finance-calc");
+  const r = allocateSalary(
+    [
+      { month: "2026-11", entitlement: 5_000_000 },
+      { month: "2026-10", entitlement: 7_401_040 },
+    ],
+    [
+      { periodMonth: "2026-10", amount: 6_618_000 },
+      { periodMonth: null, amount: 165_000 },
+    ]
+  );
+  assert.deepEqual(r.map((x) => x.month), ["2026-10", "2026-11"]);
+  assert.equal(r[0].paid, 6_783_000);
+  assert.equal(r[0].remaining, 618_040);
+  assert.equal(r[1].remaining, 5_000_000);
+});
+
+test("allocateSalary: overflow from an old month spills into the next", async () => {
+  const { allocateSalary } = await import("./finance-calc");
+  const r = allocateSalary(
+    [
+      { month: "2026-09", entitlement: 1_000_000 },
+      { month: "2026-10", entitlement: 1_000_000 },
+    ],
+    [{ periodMonth: null, amount: 1_500_000 }]
+  );
+  assert.equal(r[0].remaining, 0);
+  assert.equal(r[1].remaining, 500_000);
+});
