@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db, withTransaction } from "@/db";
 import { accounts, cashTransactions } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
+import { lockedMonthError } from "@/lib/month-lock";
 
 const payloadSchema = z.object({
   accountId: z.string().uuid("Pilih akun"),
@@ -48,6 +49,8 @@ export async function importBankStatement(payload: z.input<typeof payloadSchema>
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
   const { accountId, statementBalance } = parsed.data;
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError(parsed.data.rows.map((r) => r.txnDate), "impor mutasi bank");
+  if (lock) return { ok: false, error: lock };
 
   let inserted = 0;
   let duplicates = 0;

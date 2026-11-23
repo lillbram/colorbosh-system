@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { withTransaction } from "@/db";
+import { db, withTransaction } from "@/db";
 import { cashTransactions } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
+import { lockedMonthError } from "@/lib/month-lock";
 import { withAudit } from "@/lib/audit";
 import { cashTransactionSchema, cashBulkImportSchema } from "@/lib/validators/cash-transaction";
 
@@ -15,6 +16,8 @@ export async function createManualCashTransaction(formData: FormData) {
   }
 
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError([parsed.data.txnDate], "transaksi kas");
+  if (lock) return { error: lock };
   let newId = "";
 
   try {
@@ -52,6 +55,9 @@ export async function editManualCashTransaction(id: string, formData: FormData) 
   }
 
   const actorId = await getCurrentUserId();
+  const [lockRow] = await db.select({ d: cashTransactions.txnDate }).from(cashTransactions).where(eq(cashTransactions.id, id));
+  const lock = await lockedMonthError([parsed.data.txnDate, lockRow?.d], "ubah transaksi kas");
+  if (lock) return { error: lock };
 
   try {
     await withAudit(
@@ -101,6 +107,8 @@ export async function bulkImportCashTransactions(formData: FormData) {
   }
 
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError(parsed.data.rows.map((r) => r.txnDate), "impor kas");
+  if (lock) return { error: lock };
 
   try {
     await withTransaction(async (tx) => {
@@ -127,6 +135,9 @@ export async function bulkImportCashTransactions(formData: FormData) {
 
 export async function deleteManualCashTransaction(id: string) {
   const actorId = await getCurrentUserId();
+  const [lockRow] = await db.select({ d: cashTransactions.txnDate }).from(cashTransactions).where(eq(cashTransactions.id, id));
+  const lock = await lockedMonthError([lockRow?.d], "hapus transaksi kas");
+  if (lock) return { error: lock };
 
   try {
     await withAudit(

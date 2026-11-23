@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db, withTransaction } from "@/db";
 import { productAliases, products, salesEntries, salesReturns } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
+import { lockedMonthError } from "@/lib/month-lock";
 import { withAudit } from "@/lib/audit";
 import { todayJakarta } from "@/lib/period";
 import { syncReturnStock } from "@/lib/stock";
@@ -39,6 +40,8 @@ export async function importTikTokReturns(payload: z.input<typeof importSchema>)
   const { channelId, restock, rows } = parsed.data;
   const actorId = await getCurrentUserId();
   const today = todayJakarta();
+  const lock = await lockedMonthError(rows.map((r) => r.requestedAt.slice(0, 10)), "impor retur");
+  if (lock) return { error: lock };
   let inserted = 0;
   let updated = 0;
 
@@ -156,6 +159,8 @@ export async function createPartialReturn(entryId: string, formData: FormData) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Data tidak valid" };
   const d = parsed.data;
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError([todayJakarta()], "retur sebagian");
+  if (lock) return { error: lock };
   let newId = "";
 
   try {

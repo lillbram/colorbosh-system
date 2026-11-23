@@ -58,7 +58,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </button>
 
       <nav className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto">
-        {MAIN_NAV.map((item) => (
+        {MAIN_NAV.filter((item) => !item.ownerOnly || isOwner).map((item) => (
           <NavLink
             key={item.href}
             {...item}

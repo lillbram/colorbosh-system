@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { accounts, cashTransactions, categories } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
+import { lockedMonthError } from "@/lib/month-lock";
 import { withAudit } from "@/lib/audit";
 import { suggestCategory } from "@/lib/cash-rules";
 import { getOldestUnpaidSalaryMonth } from "@/lib/finance";
@@ -158,6 +159,8 @@ export async function saveReceiptTransaction(formData: FormData): Promise<SaveRe
   const d = parsed.data;
   const actorId = await getCurrentUserId();
   const bankRef = d.bankRef?.trim() || null;
+  const lock = await lockedMonthError([d.txnDate], "bukti transfer");
+  if (lock) return { ok: false, error: lock };
 
   if (bankRef) {
     const [dup] = await db

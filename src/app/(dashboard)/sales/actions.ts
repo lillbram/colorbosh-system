@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { db, withTransaction } from "@/db";
 import { salesEntries, salesLiveSessions, channels, payoutSalesLink } from "@/db/schema";
 import { getCurrentUserId } from "@/lib/auth";
+import { lockedMonthError } from "@/lib/month-lock";
 import { todayJakarta } from "@/lib/period";
 import { recordSaleOut, restockWholeRowReturn, reverseSaleOut } from "@/lib/stock";
 import { withAudit, writeAuditLog } from "@/lib/audit";
@@ -35,6 +36,8 @@ export async function createManualSale(formData: FormData) {
   }
 
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError([parsed.data.entryDate], "penjualan manual");
+  if (lock) return { error: lock };
   const channel = await getChannel(parsed.data.channelId);
   const platformFeeEst = Math.round((parsed.data.grossAmount * channel.feePct) / 100);
   let newId = "";
@@ -90,6 +93,8 @@ export async function createLiveSession(formData: FormData) {
   }
 
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError([parsed.data.sessionDate], "rekap live");
+  if (lock) return { error: lock };
   const channel = await getChannel(parsed.data.channelId);
   const totalGross = parsed.data.entries.reduce((sum, e) => sum + e.qty * e.unitPrice, 0);
   let newSessionId = "";
@@ -186,6 +191,8 @@ export async function importSalesCsv(formData: FormData) {
   }
 
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError(parsed.data.rows.map((r) => r.entryDate), "impor penjualan");
+  if (lock) return { error: lock };
   const channel = await getChannel(parsed.data.channelId);
 
   let replaceLiveDates: string[] = [];
@@ -282,6 +289,8 @@ export async function createPosOrder(formData: FormData) {
   }
 
   const actorId = await getCurrentUserId();
+  const lock = await lockedMonthError([todayJakarta()], "kasir POS");
+  if (lock) return { error: lock };
   const channel = await getChannel(parsed.data.channelId);
   const today = todayJakarta();
   const orderRef = `POS-${format(new Date(), "yyyyMMdd-HHmmss-SSS")}`;
@@ -344,6 +353,9 @@ async function assertNotReconciled(tx: typeof db, ids: string[]) {
 
 export async function cancelSalesEntry(id: string) {
   const actorId = await getCurrentUserId();
+  const [lockRow] = await db.select({ d: salesEntries.entryDate }).from(salesEntries).where(eq(salesEntries.id, id));
+  const lock = await lockedMonthError([lockRow?.d], "batalkan penjualan");
+  if (lock) return { error: lock };
 
   try {
     await withAudit(
@@ -373,6 +385,9 @@ export async function cancelSalesEntry(id: string) {
 export async function returnSalesEntry(id: string, formData: FormData) {
   const note = String(formData.get("note") ?? "").trim();
   const actorId = await getCurrentUserId();
+  const [lockRow] = await db.select({ d: salesEntries.entryDate }).from(salesEntries).where(eq(salesEntries.id, id));
+  const lock = await lockedMonthError([lockRow?.d], "retur penjualan");
+  if (lock) return { error: lock };
 
   try {
     await withAudit(
@@ -407,6 +422,9 @@ export async function returnSalesEntry(id: string, formData: FormData) {
 
 export async function cancelPosOrder(orderRef: string) {
   const actorId = await getCurrentUserId();
+  const lockRows = await db.select({ d: salesEntries.entryDate }).from(salesEntries).where(eq(salesEntries.orderRef, orderRef));
+  const lock = await lockedMonthError(lockRows.map((r) => r.d), "batalkan order POS");
+  if (lock) return { error: lock };
   let firstEntryId = "";
 
   try {
