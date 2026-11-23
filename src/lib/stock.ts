@@ -34,26 +34,45 @@ export async function writeStockMovements(tx: Tx, rows: NewMovement[]) {
   );
 }
 
-/** sale_out (negative) for freshly inserted sales rows. Rows without a product are skipped. */
+/**
+ * sale_out (negative) for freshly inserted sales rows. Rows without a product
+ * are skipped. Stock never goes below 0: when a sale is larger than what is on
+ * hand, only the available quantity is deducted (a later cancel puts back just
+ * what was deducted).
+ */
 export async function recordSaleOut(
   tx: Tx,
   entries: { id: string; productId: string | null; qty: number; entryDate: string }[],
   actorId: string | null
 ) {
-  await writeStockMovements(
-    tx,
-    entries
-      .filter((e): e is typeof e & { productId: string } => !!e.productId)
-      .map((e) => ({
-        productId: e.productId,
-        movementDate: e.entryDate,
-        type: "sale_out" as const,
-        qty: -e.qty,
-        refType: "sales_entry",
-        refId: e.id,
-        createdBy: actorId,
-      }))
-  );
+  const withProduct = entries.filter((e): e is typeof e & { productId: string } => !!e.productId);
+  if (withProduct.length === 0) return;
+  const ids = Array.from(new Set(withProduct.map((e) => e.productId)));
+  const sums = await tx
+    .select({ productId: stockMovements.productId, qty: sql<number>`coalesce(sum(${stockMovements.qty}), 0)::int` })
+    .from(stockMovements)
+    .where(inArray(stockMovements.productId, ids))
+    .groupBy(stockMovements.productId);
+  const available = new Map(sums.map((r) => [r.productId, Math.max(0, r.qty)]));
+
+  const rows: NewMovement[] = [];
+  for (const e of withProduct) {
+    const have = available.get(e.productId) ?? 0;
+    const take = Math.min(e.qty, have);
+    available.set(e.productId, have - take);
+    if (take <= 0) continue;
+    rows.push({
+      productId: e.productId,
+      movementDate: e.entryDate,
+      type: "sale_out",
+      qty: -take,
+      refType: "sales_entry",
+      refId: e.id,
+      note: take < e.qty ? `Stok tidak cukup: terjual ${e.qty}, stok berkurang ${take}` : undefined,
+      createdBy: actorId,
+    });
+  }
+  await writeStockMovements(tx, rows);
 }
 
 /**
@@ -153,7 +172,7 @@ export async function getStockLevels(): Promise<StockLevel[]> {
     name: r.name,
     sku: r.sku,
     hppTarget: Number(r.hppTarget ?? 0),
-    qty: r.qty,
+    qty: Math.max(0, r.qty),
     hasOpening: r.openings > 0,
     hasMovements: r.movements > 0,
   }));

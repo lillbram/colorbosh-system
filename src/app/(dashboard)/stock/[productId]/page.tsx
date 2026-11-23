@@ -54,9 +54,12 @@ export default async function ProductStockLogPage({ params }: { params: Promise<
     .where(eq(stockMovements.productId, productId))
     .orderBy(asc(stockMovements.movementDate), asc(stockMovements.createdAt));
 
-  const balances = rows.reduce<number[]>((acc, r) => [...acc, (acc[acc.length - 1] ?? 0) + r.qty], []);
+  // Running balance never shows below 0 (older data may have gone negative).
+  const balances = rows.reduce<number[]>((acc, r) => [...acc, Math.max(0, (acc[acc.length - 1] ?? 0) + r.qty)], []);
   const running = balances[balances.length - 1] ?? 0;
-  const log = rows.map((r, i) => ({ ...r, balance: balances[i] })).reverse();
+  const log = rows
+    .map((r, i) => ({ ...r, before: i === 0 ? 0 : balances[i - 1], after: balances[i] }))
+    .reverse();
 
   return (
     <>
@@ -84,8 +87,9 @@ export default async function ProductStockLogPage({ params }: { params: Promise<
                     <TableRow>
                       <TableHead>Tanggal</TableHead>
                       <TableHead>Jenis</TableHead>
+                      <TableHead className="text-right">Stok Awal</TableHead>
                       <TableHead className="text-right">Jumlah</TableHead>
-                      <TableHead className="text-right">Saldo</TableHead>
+                      <TableHead className="text-right">Stok Akhir</TableHead>
                       <TableHead>Keterangan</TableHead>
                       <TableHead>Dicatat oleh</TableHead>
                     </TableRow>
@@ -97,10 +101,11 @@ export default async function ProductStockLogPage({ params }: { params: Promise<
                         <TableCell>
                           <Badge variant={r.qty < 0 ? "warning" : "success"}>{label(r.type, r.refType)}</Badge>
                         </TableCell>
+                        <TableCell className="text-right font-mono-num">{r.before}</TableCell>
                         <TableCell className="text-right font-mono-num">
                           {r.qty > 0 ? `+${r.qty}` : r.qty}
                         </TableCell>
-                        <TableCell className="text-right font-mono-num">{r.balance}</TableCell>
+                        <TableCell className="text-right font-mono-num font-bold">{r.after}</TableCell>
                         <TableCell className="text-sm">
                           {r.refType?.startsWith("sales_entry") && r.refId ? (
                             <Link href={`/sales/${r.refId}`} className="text-primary-600 hover:underline">
@@ -130,7 +135,7 @@ export default async function ProductStockLogPage({ params }: { params: Promise<
                       <p className={`font-mono-num font-bold ${r.qty < 0 ? "text-warning" : "text-success"}`}>
                         {r.qty > 0 ? `+${r.qty}` : r.qty}
                       </p>
-                      <p className="font-mono-num text-xs text-muted">saldo {r.balance}</p>
+                      <p className="font-mono-num text-xs text-muted">{r.before} → {r.after}</p>
                     </div>
                   </div>
                 ))}
