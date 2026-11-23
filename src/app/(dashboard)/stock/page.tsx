@@ -125,7 +125,9 @@ export default async function StockPage({
               <TableBody>
                 {levels.map((l) => (
                   <TableRow key={l.productId}>
-                    <TableCell className="font-medium">{l.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/stock/${l.productId}`} className="hover:underline">{l.name}</Link>
+                    </TableCell>
                     <TableCell>{l.sku ?? "-"}</TableCell>
                     <TableCell className="text-right font-mono-num">{l.qty}</TableCell>
                     {isOwner && (
@@ -158,7 +160,7 @@ export default async function StockPage({
               {levels.map((l) => (
                 <div key={l.productId} className="flex items-center gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">{l.name}</p>
+                    <Link href={`/stock/${l.productId}`} className="block truncate text-sm font-medium text-ink">{l.name}</Link>
                     <p className="text-xs text-muted">
                       {l.sku ?? "-"}
                       {isOwner && ` · ${formatIDR(Math.max(0, l.qty) * l.hppTarget)}`}
