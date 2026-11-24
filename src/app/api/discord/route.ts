@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { getPnL, getWorkingCapital } from "@/lib/finance";
 import { isAllowed, verifyDiscordRequest } from "@/lib/discord";
+import { runTanya } from "@/lib/discord-tanya";
 import { prepareCatat, resolveCatat, type DiscordAttachment } from "@/lib/discord-catat";
 import { formatIDR, formatDate } from "@/lib/format";
 import { isValidMonth, monthLabel, monthRange, todayJakarta } from "@/lib/period";
@@ -123,6 +124,21 @@ export async function POST(request: Request) {
         out = await prepareCatat(att, userId);
       } catch {
         out = { content: "Gagal membaca bukti, coba lagi." };
+      }
+      await edit(out);
+    });
+    return NextResponse.json({ type: 5 });
+  }
+
+  if (i.data.name === "tanya") {
+    const q = i.data.options?.find((o) => o.name === "pertanyaan")?.value;
+    if (!q || !userId) return reply("Tulis pertanyaannya.");
+    after(async () => {
+      let out: { content: string; components?: unknown[] };
+      try {
+        out = await runTanya(q, userId);
+      } catch {
+        out = { content: "Gagal memproses, coba lagi." };
       }
       await edit(out);
     });

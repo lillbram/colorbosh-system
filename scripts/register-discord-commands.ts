@@ -15,6 +15,11 @@ const commands = [
     description: "Catat bukti transfer dari foto",
     options: [{ type: 11, name: "bukti", description: "Foto bukti transfer / penarikan BRImo", required: true }],
   },
+  {
+    name: "tanya",
+    description: "Tanya keuangan atau catat penjualan/kas dengan kalimat biasa",
+    options: [{ type: 3, name: "pertanyaan", description: "Mis. laba oktober berapa? / catat penjualan 2 X di TikTok Shop", required: true }],
+  },
   { name: "kas", description: "Saldo kas dan modal berjalan" },
 ];
 

@@ -34,7 +34,7 @@ export function discordName(userId: string): string {
 }
 
 /** Audit actor: DISCORD_ACTOR_USER_ID if set, otherwise the first active owner. */
-async function actorId(): Promise<string | null> {
+export async function actorId(): Promise<string | null> {
   const fixed = process.env.DISCORD_ACTOR_USER_ID;
   if (fixed) return fixed;
   const [owner] = await db
@@ -247,6 +247,10 @@ export async function resolveCatat(action: "ok" | "no", pendingId: string, click
   if (!row) return "Sudah diproses atau kedaluwarsa.";
   if (action === "no") return `Dibatalkan oleh ${discordName(clickerId)}.`;
 
+  if (row.kind === "sale" || row.kind === "cash_text") {
+    const { confirmProposal } = await import("@/lib/discord-tanya");
+    return confirmProposal(row.kind, row.payload, pendingId, clickerId);
+  }
   if (row.kind === "cash_excel") return importExcelRows(pendingId, row.payload as ExcelPending, clickerId);
 
   const { path, extracted: r, analysis: a } = row.payload as Pending;
