@@ -10,6 +10,11 @@ const commands = [
     options: [{ type: 3, name: "bulan", description: "Format YYYY-MM, kosongkan untuk bulan ini", required: false }],
   },
   { name: "stok", description: "Total stok dan produk yang menipis" },
+  {
+    name: "catat",
+    description: "Catat bukti transfer dari foto",
+    options: [{ type: 11, name: "bukti", description: "Foto bukti transfer / penarikan BRImo", required: true }],
+  },
   { name: "kas", description: "Saldo kas dan modal berjalan" },
 ];
 

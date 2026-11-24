@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { getPnL, getWorkingCapital } from "@/lib/finance";
 import { isAllowed, verifyDiscordRequest } from "@/lib/discord";
+import { prepareCatat, resolveCatat, type DiscordAttachment } from "@/lib/discord-catat";
 import { formatIDR, formatDate } from "@/lib/format";
 import { isValidMonth, monthLabel, monthRange, todayJakarta } from "@/lib/period";
 import { getSaldoKas } from "@/lib/reports";
@@ -17,7 +18,13 @@ type Interaction = {
   user?: { id: string };
   token?: string;
   application_id?: string;
-  data?: { name: string; options?: { name: string; value: string }[] };
+  message?: { id: string };
+  data?: {
+    name?: string;
+    custom_id?: string;
+    options?: { name: string; value: string }[];
+    resolved?: { attachments?: Record<string, DiscordAttachment> };
+  };
 };
 
 const reply = (content: string) => NextResponse.json({ type: 4, data: { content, allowed_mentions: { parse: [] } } });
@@ -71,7 +78,7 @@ export async function POST(request: Request) {
   const i = JSON.parse(body) as Interaction;
   if (i.type === 1) return NextResponse.json({ type: 1 }); // PING
 
-  if (i.type !== 2 || !i.data) return reply("Perintah tidak dikenali.");
+  if ((i.type !== 2 && i.type !== 3) || !i.data) return reply("Perintah tidak dikenali.");
   const userId = i.member?.user?.id ?? i.user?.id;
   if (!isAllowed({ guildId: i.guild_id, channelId: i.channel_id, userId })) {
     return NextResponse.json({
@@ -80,12 +87,52 @@ export async function POST(request: Request) {
     });
   }
 
+  const appIdEarly = i.application_id ?? process.env.DISCORD_APP_ID;
+  const tokenEarly = i.token;
+  if (!tokenEarly || !appIdEarly) return reply("Permintaan tidak lengkap.");
+  const edit = (payload: Record<string, unknown>) =>
+    fetch(`https://discord.com/api/v10/webhooks/${appIdEarly}/${tokenEarly}/messages/@original`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allowed_mentions: { parse: [] }, ...payload }),
+    });
+
+  // Button on a /catat proposal: acknowledge silently, then replace the message.
+  if (i.type === 3) {
+    const [prefix, action, id] = (i.data.custom_id ?? "").split(":");
+    if (prefix !== "catat" || (action !== "ok" && action !== "no") || !id || !userId) return reply("Tombol tidak dikenali.");
+    after(async () => {
+      let content: string;
+      try {
+        content = await resolveCatat(action, id, userId);
+      } catch {
+        content = "Gagal memproses, coba lagi.";
+      }
+      await edit({ content, components: [] });
+    });
+    return NextResponse.json({ type: 6 });
+  }
+
+  if (i.data.name === "catat") {
+    const attId = i.data.options?.find((o) => o.name === "bukti")?.value;
+    const att = attId ? i.data.resolved?.attachments?.[attId] : undefined;
+    if (!att || !userId) return reply("Lampirkan foto bukti transfer.");
+    after(async () => {
+      let out: { content: string; components?: unknown[] };
+      try {
+        out = await prepareCatat(att, userId);
+      } catch {
+        out = { content: "Gagal membaca bukti, coba lagi." };
+      }
+      await edit(out);
+    });
+    return NextResponse.json({ type: 5 });
+  }
+
   // Discord wants an answer within 3 seconds, so acknowledge now and edit the
   // message with the real result once the numbers are ready.
-  const { name, options } = i.data;
-  const token = i.token;
-  const appId = i.application_id ?? process.env.DISCORD_APP_ID;
-  if (!token || !appId) return reply("Permintaan tidak lengkap.");
+  const { options } = i.data;
+  const name = i.data.name ?? "";
 
   after(async () => {
     let content: string;
@@ -94,11 +141,7 @@ export async function POST(request: Request) {
     } catch {
       content = "Gagal mengambil data, coba lagi sebentar lagi.";
     }
-    await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-    });
+    await edit({ content });
   });
   return NextResponse.json({ type: 5 });
 }
