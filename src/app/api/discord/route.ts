@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getPnL, getWorkingCapital } from "@/lib/finance";
 import { isAllowed, verifyDiscordRequest } from "@/lib/discord";
 import { formatIDR, formatDate } from "@/lib/format";
@@ -7,6 +7,7 @@ import { getSaldoKas } from "@/lib/reports";
 import { getLowStockThreshold, getStockLevels } from "@/lib/stock";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type Interaction = {
   type: number;
@@ -14,6 +15,8 @@ type Interaction = {
   channel_id?: string;
   member?: { user?: { id: string } };
   user?: { id: string };
+  token?: string;
+  application_id?: string;
   data?: { name: string; options?: { name: string; value: string }[] };
 };
 
@@ -77,21 +80,41 @@ export async function POST(request: Request) {
     });
   }
 
-  try {
-    switch (i.data.name) {
-      case "laba": {
-        const given = i.data.options?.find((o) => o.name === "bulan")?.value;
-        if (given && !isValidMonth(given)) return reply("Format bulan harus YYYY-MM, contoh 2026-11.");
-        return reply(await laba(given ?? todayJakarta().slice(0, 7)));
-      }
-      case "stok":
-        return reply(await stok());
-      case "kas":
-        return reply(await kas());
-      default:
-        return reply("Perintah tidak dikenali.");
+  // Discord wants an answer within 3 seconds, so acknowledge now and edit the
+  // message with the real result once the numbers are ready.
+  const { name, options } = i.data;
+  const token = i.token;
+  const appId = i.application_id ?? process.env.DISCORD_APP_ID;
+  if (!token || !appId) return reply("Permintaan tidak lengkap.");
+
+  after(async () => {
+    let content: string;
+    try {
+      content = await run(name, options);
+    } catch {
+      content = "Gagal mengambil data, coba lagi sebentar lagi.";
     }
-  } catch {
-    return reply("Gagal mengambil data, coba lagi sebentar lagi.");
+    await fetch(`https://discord.com/api/v10/webhooks/${appId}/${token}/messages/@original`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+    });
+  });
+  return NextResponse.json({ type: 5 });
+}
+
+async function run(name: string, options?: { name: string; value: string }[]): Promise<string> {
+  switch (name) {
+    case "laba": {
+      const given = options?.find((o) => o.name === "bulan")?.value;
+      if (given && !isValidMonth(given)) return "Format bulan harus YYYY-MM, contoh 2026-11.";
+      return laba(given ?? todayJakarta().slice(0, 7));
+    }
+    case "stok":
+      return stok();
+    case "kas":
+      return kas();
+    default:
+      return "Perintah tidak dikenali.";
   }
 }
