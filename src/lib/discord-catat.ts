@@ -1,6 +1,9 @@
+import * as XLSX from "xlsx";
 import { and, eq, gt, sql } from "drizzle-orm";
-import { db } from "@/db";
-import { discordPending, users } from "@/db/schema";
+import { db, withTransaction } from "@/db";
+import { accounts, cashTransactions, categories, discordPending, users } from "@/db/schema";
+import { writeAuditLog } from "@/lib/audit";
+import { resolveCashRows, type ResolvedRow } from "@/lib/cash-import";
 import { formatDate, formatIDR } from "@/lib/format";
 import { lockedMonthError } from "@/lib/month-lock";
 import { todayJakarta } from "@/lib/period";
@@ -58,15 +61,22 @@ export function describeReceipt(r: ExtractedReceipt, a: ReceiptAnalysis): string
   return lines.filter(Boolean).join("\n");
 }
 
+type ExcelPending = { rows: ResolvedRow[] };
+const MAX_EXCEL_BYTES = 2 * 1024 * 1024;
+const MAX_EXCEL_ROWS = 500;
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
 export type CatatReply = { content: string; components?: unknown[] };
 
 /** Slash command /catat with a screenshot: read it, store a pending proposal, return the message with buttons. */
 export async function prepareCatat(att: DiscordAttachment, discordUserId: string): Promise<CatatReply> {
+  const isExcel = att.content_type?.startsWith(XLSX_MIME) || /\.xlsx$/i.test(att.filename ?? "");
+  if (isExcel) return prepareExcel(att, discordUserId);
   if (!claudeVisionEnabled()) return { content: "Pembaca gambar belum aktif (ANTHROPIC_API_KEY belum diisi di Vercel)." };
 
   const mime = att.content_type?.split(";")[0] ?? "";
   if (!(PROOF_MIME_TYPES as readonly string[]).includes(mime)) {
-    return { content: "Kirim foto JPG, PNG, atau WebP. File Excel belum didukung lewat Discord." };
+    return { content: "Kirim foto JPG, PNG, atau WebP, atau file Excel (.xlsx) dari template Arus Kas." };
   }
   if ((att.size ?? 0) > MAX_PROOF_BYTES) return { content: "Foto terlalu besar (maksimal 5 MB)." };
   let host = "";
@@ -112,6 +122,113 @@ export async function prepareCatat(att: DiscordAttachment, discordUserId: string
   };
 }
 
+function validDiscordUrl(url: string): boolean {
+  try {
+    return ALLOWED_HOSTS.includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** /catat with an .xlsx made from the Arus Kas template (same columns and checks as the web import). */
+async function prepareExcel(att: DiscordAttachment, discordUserId: string): Promise<CatatReply> {
+  if ((att.size ?? 0) > MAX_EXCEL_BYTES) return { content: "File terlalu besar (maksimal 2 MB)." };
+  if (!validDiscordUrl(att.url)) return { content: "Lampiran tidak valid." };
+
+  const res = await fetch(att.url);
+  if (!res.ok) return { content: "Gagal mengunduh file dari Discord." };
+  const bytes = Buffer.from(await res.arrayBuffer());
+  if (bytes.length > MAX_EXCEL_BYTES) return { content: "File terlalu besar (maksimal 2 MB)." };
+
+  let raw: Record<string, unknown>[];
+  try {
+    const wb = XLSX.read(bytes, { type: "buffer", cellDates: true });
+    const sheet = wb.Sheets["Template"] ?? wb.Sheets[wb.SheetNames[0]];
+    raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  } catch {
+    return { content: "File Excel tidak bisa dibaca." };
+  }
+  if (raw.length === 0) return { content: "File kosong." };
+  if (raw.length > MAX_EXCEL_ROWS) return { content: `Terlalu banyak baris (maksimal ${MAX_EXCEL_ROWS}).` };
+  if (!("Tanggal" in raw[0]) || !("Nominal" in raw[0])) {
+    return {
+      content: "Kolom tidak cocok. Pakai template di web (Arus Kas > Impor Excel > Download Template): Tanggal, Arah, Akun, Kategori, Keterangan, Nominal.",
+    };
+  }
+
+  const [accountRows, categoryRows] = await Promise.all([
+    db.select({ id: accounts.id, name: accounts.name }).from(accounts).where(eq(accounts.isActive, true)),
+    db.select({ id: categories.id, name: categories.name }).from(categories),
+  ]);
+  const rows = resolveCashRows(raw, accountRows, categoryRows);
+  const good = rows.filter((r) => r.valid);
+  const bad = rows.map((r, i) => ({ r, line: i + 2 })).filter((x) => !x.r.valid);
+  if (good.length === 0) {
+    return { content: `Tidak ada baris yang valid.
+${bad.slice(0, 8).map((b) => `• baris ${b.line}: ${b.r.reason}`).join("\n")}` };
+  }
+
+  const sum = (dir: "in" | "out") => good.filter((r) => r.direction === dir).reduce((t, r) => t + r.amount, 0);
+  const [row] = await db
+    .insert(discordPending)
+    .values({ kind: "cash_excel", payload: { rows: good } satisfies ExcelPending, discordUserId })
+    .returning({ id: discordPending.id });
+
+  const lines = [
+    `**File Excel terbaca** — ${good.length} baris valid${bad.length ? `, ${bad.length} dilewati` : ""}`,
+    `Uang Masuk: ${formatIDR(sum("in"))} · Uang Keluar: ${formatIDR(sum("out"))}`,
+    ...(bad.length ? ["Baris bermasalah (tidak ikut diimpor):", ...bad.slice(0, 6).map((b) => `• baris ${b.line}: ${b.r.reason}`)] : []),
+    bad.length > 6 ? `…dan ${bad.length - 6} lainnya` : null,
+  ];
+  return {
+    content: lines.filter(Boolean).join("\n"),
+    components: [
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 3, label: `Impor ${good.length} baris`, custom_id: `catat:ok:${row.id}` },
+          { type: 2, style: 4, label: "Batal", custom_id: `catat:no:${row.id}` },
+        ],
+      },
+    ],
+  };
+}
+
+async function importExcelRows(pendingId: string, payload: ExcelPending, clickerId: string): Promise<string> {
+  const lock = await lockedMonthError(payload.rows.map((r) => r.txnDate), "impor kas");
+  if (lock) return lock;
+  const who = discordName(clickerId);
+  const actor = await actorId();
+  try {
+    await withTransaction(async (tx) => {
+      await tx.insert(cashTransactions).values(
+        payload.rows.map((r) => ({
+          txnDate: r.txnDate,
+          accountId: r.accountId as string,
+          direction: r.direction as "in" | "out",
+          amount: String(r.amount),
+          categoryId: r.categoryId || null,
+          relatedType: "manual" as const,
+          description: r.description,
+          source: "bulk_excel" as const,
+          status: "draft" as const,
+          createdBy: actor,
+        }))
+      );
+      await writeAuditLog(tx as unknown as typeof db, {
+        entityType: "cash_import",
+        entityId: pendingId,
+        action: "create",
+        actorId: actor,
+        diff: { via: "discord", discordUserId: clickerId, discordName: who, rows: payload.rows.length },
+      });
+    });
+  } catch {
+    return "Gagal mengimpor transaksi.";
+  }
+  return `✅ ${payload.rows.length} baris masuk Arus Kas sebagai "Perlu dicek" oleh ${who}.`;
+}
+
 /** Button press. Claims the pending row atomically so a double-click saves once. */
 export async function resolveCatat(action: "ok" | "no", pendingId: string, clickerId: string): Promise<string> {
   if (!/^[0-9a-f-]{36}$/i.test(pendingId)) return "Permintaan tidak valid.";
@@ -125,10 +242,12 @@ export async function resolveCatat(action: "ok" | "no", pendingId: string, click
         gt(discordPending.createdAt, sql`now() - interval '${sql.raw(String(PENDING_TTL_MS / 1000))} seconds'`)
       )
     )
-    .returning({ payload: discordPending.payload });
+    .returning({ payload: discordPending.payload, kind: discordPending.kind });
   const row = claimed[0];
   if (!row) return "Sudah diproses atau kedaluwarsa.";
   if (action === "no") return `Dibatalkan oleh ${discordName(clickerId)}.`;
+
+  if (row.kind === "cash_excel") return importExcelRows(pendingId, row.payload as ExcelPending, clickerId);
 
   const { path, extracted: r, analysis: a } = row.payload as Pending;
   if (!a.accountId) return "Ada lebih dari satu akun aktif — catat bukti ini lewat halaman web (Arus Kas > Bukti Transfer).";
