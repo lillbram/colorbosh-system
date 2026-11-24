@@ -12,6 +12,8 @@ import {
 const REMEMBER_MAX_AGE = 60 * 60 * 24 * 30; // "Ingat perangkat ini": 30 days
 
 export async function proxy(request: NextRequest) {
+  // Discord calls this endpoint server-to-server; the route verifies Discord's signature itself.
+  if (request.nextUrl.pathname === "/api/discord") return NextResponse.next();
   let response = NextResponse.next({ request });
   // Login without "Ingat perangkat ini" → auth cookies stay session-only.
   const sessionOnly = request.cookies.get("cb_session_only")?.value === "1";
